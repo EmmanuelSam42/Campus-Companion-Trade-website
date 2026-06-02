@@ -10,20 +10,20 @@
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,400;0,500;0,600;0,700;1,500&display=swap" rel="stylesheet" />
   <style>
     :root {
-      --gold: #e6b84d;
-      --gold-light: #f4ddb3;
-      --red: #d84545;
-      --red-dark: #b83838;
+      --gold: #d4af37;
+      --gold-light: #f5e6a3;
+      --red: #c0392b;
+      --red-dark: #922b21;
       --dark: #0f0f1a;
       --surface: #1a1a2e;
-      --surface2: #242a42;
-      --text: #f0f0f5;
-      --muted: #9ca3af;
-      --success: #34d399;
-      --blue: #22d3ee;
-      --warning: #f59e0b;
+      --surface2: #16213e;
+      --text: #eaeaea;
+      --muted: #a0a0b0;
+      --success: #27ae60;
+      --blue: #3498db;
+      --warning: #f39c12;
       --radius: 12px;
-      --shadow: 0 8px 32px rgba(216,69,69,.2);
+      --shadow: 0 8px 32px rgba(0,0,0,.35);
     }
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -38,7 +38,7 @@
     button, input, select, textarea {
       font: inherit;
       border-radius: 8px;
-      border: 1px solid #3a3a4f;
+      border: 1px solid #333;
       background: var(--surface2);
       color: var(--text);
       padding: 0.6rem 0.9rem;
@@ -53,7 +53,7 @@
       font-weight: 600;
     }
     .btn-gold {
-      background: linear-gradient(135deg, var(--gold), #d4a574);
+      background: linear-gradient(135deg, var(--gold), #b8860b);
       border: none;
       color: #1a1a2e;
       font-weight: 600;
@@ -74,7 +74,7 @@
       display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1rem;
     }
     #app-loader .spinner {
-      width: 48px; height: 48px; border: 4px solid #3a3a4f;
+      width: 48px; height: 48px; border: 4px solid #333;
       border-top-color: var(--gold); border-radius: 50%;
       animation: spin .8s linear infinite;
     }
@@ -91,9 +91,9 @@
     }
 
     header {
-      background: rgba(26,26,46,.96);
+      background: rgba(26,26,46,.95);
       backdrop-filter: blur(10px);
-      border-bottom: 1px solid #3a3a4f;
+      border-bottom: 1px solid #2a2a4a;
       position: sticky; top: 0; z-index: 100;
     }
     .header-inner {
@@ -115,7 +115,7 @@
       padding: .1rem .35rem; border-radius: 999px; margin-left: 2px;
     }
     .user-pill {
-      background: linear-gradient(135deg, var(--gold), #d4a574);
+      background: linear-gradient(135deg, var(--gold), #b8860b);
       color: #1a1a2e; font-style: italic; font-weight: 600;
       padding: .35rem .9rem; border-radius: 999px; font-size: .85rem;
       display: flex; align-items: center; gap: .35rem;
@@ -134,9 +134,9 @@
       padding: 1rem 1.25rem; border-radius: var(--radius); color: #fff;
       box-shadow: var(--shadow); animation: slideIn .3s ease;
     }
-    .toast.success { background: linear-gradient(135deg, #34d399, #10b981); }
-    .toast.warning { background: linear-gradient(135deg, #f59e0b, var(--gold)); color: #1a1a2e; }
-    .toast.error { background: linear-gradient(135deg, #d84545, #b83838); }
+    .toast.success { background: linear-gradient(135deg, #27ae60, #2ecc71); }
+    .toast.warning { background: linear-gradient(135deg, #f39c12, var(--gold)); color: #1a1a2e; }
+    .toast.error { background: linear-gradient(135deg, #c0392b, #e74c3c); }
     @keyframes slideIn {
       from { transform: translateX(100%); opacity: 0; }
       to { transform: translateX(0); opacity: 1; }
@@ -181,21 +181,21 @@
     .form-group input, .form-group select, .form-group textarea { width: 100%; }
     .role-tabs { display: flex; gap: .5rem; margin-bottom: 1rem; }
     .role-tab {
-      flex: 1; padding: .5rem; border: 2px solid #3a3a4f;
+      flex: 1; padding: .5rem; border: 2px solid #444;
       background: transparent; color: var(--muted);
     }
     .role-tab.active { border-color: var(--gold); color: var(--gold); }
     .vendor-fields.hidden { display: none; }
     .status-msg { padding: .75rem; border-radius: 8px; margin-top: 1rem; font-size: .9rem; }
-    .status-msg.pending { background: rgba(230,184,77,.15); border: 1px solid var(--gold); color: var(--gold-light); }
-    .status-msg.rejected { background: rgba(216,69,69,.15); border: 1px solid var(--red); color: #ffb3b3; }
+    .status-msg.pending { background: rgba(212,175,55,.2); border: 1px solid var(--gold); color: var(--gold-light); }
+    .status-msg.rejected { background: rgba(192,57,43,.2); border: 1px solid var(--red); color: #ffb3b3; }
 
     /* Hero */
     .hero {
       position: relative; min-height: 420px;
       display: flex; align-items: center; justify-content: center;
       text-align: center; overflow: hidden;
-      background: linear-gradient(135deg, #1a1a2e 0%, #2a1a2e 50%, #1a1a2e 100%);
+      background: linear-gradient(135deg, #1a1a2e 0%, #0f3460 50%, #1a1a2e 100%);
     }
     .hero::before {
       content: ''; position: absolute; inset: 0;
@@ -220,7 +220,7 @@
     }
     .category-card:hover {
       transform: scale(1.04);
-      box-shadow: 0 0 24px rgba(216,69,69,.35);
+      box-shadow: 0 0 24px rgba(192,57,43,.45);
       border-color: var(--red);
     }
     .category-card img { height: 140px; width: 100%; object-fit: cover; }
@@ -242,7 +242,7 @@
     .stars { color: var(--gold); letter-spacing: 1px; }
     .card-actions { display: flex; gap: .35rem; flex-wrap: wrap; margin-top: auto; padding-top: .5rem; }
     .card-actions button { font-size: .8rem; padding: .4rem .6rem; flex: 1; min-width: 70px; }
-    .btn-icon { background: none; border: 1px solid #3a3a4f; padding: .4rem .5rem; }
+    .btn-icon { background: none; border: 1px solid #444; padding: .4rem .5rem; }
     .btn-icon.active { color: var(--red); border-color: var(--red); }
 
     .filter-bar {
@@ -297,8 +297,8 @@
       font-size: .75rem; font-weight: 600;
     }
     .status-Processing { background: var(--gold); color: #1a1a2e; }
-    .status-Confirmed { background: var(--blue); color: #000; }
-    .status-Delivered { background: var(--success); color: #000; }
+    .status-Confirmed { background: var(--blue); color: #fff; }
+    .status-Delivered { background: var(--success); color: #fff; }
     .status-Cancelled { background: var(--red); color: #fff; }
 
     /* Hostels */
@@ -342,7 +342,7 @@
     .table-wrap { overflow-x: auto; }
 
     .vendor-tabs { display: flex; gap: .5rem; flex-wrap: wrap; margin-bottom: 1rem; }
-    .vendor-tabs button { background: var(--surface); border: 1px solid #3a3a4f; color: var(--muted); }
+    .vendor-tabs button { background: var(--surface); border: 1px solid #444; color: var(--muted); }
     .vendor-tabs button.active { border-color: var(--gold); color: var(--gold); }
     .vendor-panel { display: none; }
     .vendor-panel.active { display: block; }
@@ -350,7 +350,7 @@
     .filter-bar .btn-outline.active { border-color: var(--gold); color: var(--gold); }
 
     footer {
-      background: var(--surface); border-top: 1px solid #3a3a4f;
+      background: var(--surface); border-top: 1px solid #2a2a4a;
       padding: 2rem 3%; margin-top: 3rem; text-align: center;
     }
     footer .footer-grid {
