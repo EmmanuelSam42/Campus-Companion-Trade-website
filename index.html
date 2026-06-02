@@ -199,8 +199,14 @@
     }
     .hero::before {
       content: ''; position: absolute; inset: 0;
-      background: url('https://images.unsplash.com/photo-1562774053-701939374585?w=1600') center/cover;
+      background-image: url('https://images.unsplash.com/photo-1562774053-701939374585?w=1600');
+      background-size: cover;
+      background-position: center;
       opacity: .25;
+      transition: opacity 0.6s ease, background-image 0.8s ease;
+    }
+    .hero::before.fade-out {
+      opacity: 0;
     }
     .hero-content { position: relative; z-index: 1; padding: 2rem; }
     .hero h2 { font-size: clamp(1.8rem, 4vw, 2.8rem); margin-bottom: .5rem; }
@@ -449,7 +455,7 @@
     </div>
 
     <div id="page-home" class="page hidden">
-      <section class="hero">
+      <section class="hero" id="hero-section">
         <div class="hero-content">
           <h2>Your Campus Marketplace</h2>
           <p>Buy, sell, book services, and find hostels — built for Ghanaian campus life.</p>
@@ -657,6 +663,59 @@
   <div id="lightbox" class="modal-overlay hidden">
     <img id="lightbox-img" alt="" style="max-width:90%;max-height:90%;margin:auto;border-radius:8px" />
   </div>
+
+  <script>
+    // Hero Background Image Shuffle
+    const heroBackgroundImages = [
+      'https://images.unsplash.com/photo-1562774053-701939374585?w=1600',
+      'https://images.unsplash.com/photo-1552664730-d307ca884978?w=1600',
+      'https://images.unsplash.com/photo-1522202176988-696dba727aa7?w=1600',
+      'https://images.unsplash.com/photo-1519389950473-47ba0277781c?w=1600',
+      'https://images.unsplash.com/photo-1552058544-f6b08422138a?w=1600',
+      'https://images.unsplash.com/photo-1523580494863-6f3031224c94?w=1600',
+      'https://images.unsplash.com/photo-1504384308090-c894fdcc538d?w=1600',
+      'https://images.unsplash.com/photo-1529156069898-49953e39b3ac?w=1600'
+    ];
+
+    function getRandomImage() {
+      return heroBackgroundImages[Math.floor(Math.random() * heroBackgroundImages.length)];
+    }
+
+    function changeHeroBackground() {
+      const hero = document.querySelector('.hero::before');
+      const heroElement = document.getElementById('hero-section');
+      if (!heroElement) return;
+
+      const heroBefore = window.getComputedStyle(heroElement, '::before');
+      const newImage = getRandomImage();
+      
+      if (heroElement) {
+        heroElement.style.setProperty('--bg-image', `url('${newImage}')`);
+        // Update the pseudo-element background
+        const styleSheet = document.styleSheets[document.styleSheets.length - 1];
+        try {
+          styleSheet.insertRule(`.hero::before { background-image: url('${newImage}') !important; }`, styleSheet.cssRules.length);
+        } catch (e) {
+          // Fallback if insertRule fails
+          heroElement.style.backgroundImage = `url('${newImage}')`;
+        }
+      }
+    }
+
+    // Initialize with random image on page load
+    window.addEventListener('load', () => {
+      changeHeroBackground();
+      // Change image every 10 seconds
+      setInterval(changeHeroBackground, 10000);
+    });
+
+    // Also shuffle on home page navigation
+    document.addEventListener('click', (e) => {
+      if (e.target.dataset.nav === 'home' || e.target.closest('[data-nav="home"]')) {
+        setTimeout(changeHeroBackground, 300);
+      }
+    });
+  </script>
 
   <script src="app.js"></script>
 </body>
