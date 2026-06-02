@@ -29,9 +29,25 @@
     body {
       font-family: 'DM Sans', system-ui, sans-serif;
       background: var(--dark);
+      background-size: cover;
+      background-position: center;
+      background-attachment: fixed;
       color: var(--text);
       min-height: 100vh;
       line-height: 1.5;
+      transition: background-image 1.2s ease-in-out;
+    }
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 15, 26, 0.75);
+      pointer-events: none;
+      z-index: 0;
+    }
+    main {
+      position: relative;
+      z-index: 1;
     }
     a { color: var(--gold); text-decoration: none; }
     img { max-width: 100%; display: block; }
@@ -195,18 +211,7 @@
       position: relative; min-height: 420px;
       display: flex; align-items: center; justify-content: center;
       text-align: center; overflow: hidden;
-      background: linear-gradient(135deg, #1a1a2e 0%, #0f3460 50%, #1a1a2e 100%);
-    }
-    .hero::before {
-      content: ''; position: absolute; inset: 0;
-      background-image: url('https://images.unsplash.com/photo-1562774053-701939374585?w=1600');
-      background-size: cover;
-      background-position: center;
-      opacity: .25;
-      transition: opacity 0.6s ease, background-image 0.8s ease;
-    }
-    .hero::before.fade-out {
-      opacity: 0;
+      background: linear-gradient(135deg, rgba(26, 26, 46, 0.6) 0%, rgba(15, 52, 96, 0.6) 50%, rgba(26, 26, 46, 0.6) 100%);
     }
     .hero-content { position: relative; z-index: 1; padding: 2rem; }
     .hero h2 { font-size: clamp(1.8rem, 4vw, 2.8rem); margin-bottom: .5rem; }
@@ -665,8 +670,8 @@
   </div>
 
   <script>
-    // Hero Background Image Shuffle
-    const heroBackgroundImages = [
+    // Full Background Image Shuffle
+    const backgroundImages = [
       'https://images.unsplash.com/photo-1562774053-701939374585?w=1600',
       'https://images.unsplash.com/photo-1552664730-d307ca884978?w=1600',
       'https://images.unsplash.com/photo-1522202176988-696dba727aa7?w=1600',
@@ -677,43 +682,23 @@
       'https://images.unsplash.com/photo-1529156069898-49953e39b3ac?w=1600'
     ];
 
-    function getRandomImage() {
-      return heroBackgroundImages[Math.floor(Math.random() * heroBackgroundImages.length)];
+    let currentImageIndex = 0;
+
+    function getNextImage() {
+      currentImageIndex = (currentImageIndex + 1) % backgroundImages.length;
+      return backgroundImages[currentImageIndex];
     }
 
-    function changeHeroBackground() {
-      const hero = document.querySelector('.hero::before');
-      const heroElement = document.getElementById('hero-section');
-      if (!heroElement) return;
-
-      const heroBefore = window.getComputedStyle(heroElement, '::before');
-      const newImage = getRandomImage();
-      
-      if (heroElement) {
-        heroElement.style.setProperty('--bg-image', `url('${newImage}')`);
-        // Update the pseudo-element background
-        const styleSheet = document.styleSheets[document.styleSheets.length - 1];
-        try {
-          styleSheet.insertRule(`.hero::before { background-image: url('${newImage}') !important; }`, styleSheet.cssRules.length);
-        } catch (e) {
-          // Fallback if insertRule fails
-          heroElement.style.backgroundImage = `url('${newImage}')`;
-        }
-      }
+    function changeBackgroundImage() {
+      const newImage = getNextImage();
+      document.body.style.backgroundImage = `url('${newImage}')`;
     }
 
-    // Initialize with random image on page load
+    // Initialize with first image
     window.addEventListener('load', () => {
-      changeHeroBackground();
-      // Change image every 10 seconds
-      setInterval(changeHeroBackground, 10000);
-    });
-
-    // Also shuffle on home page navigation
-    document.addEventListener('click', (e) => {
-      if (e.target.dataset.nav === 'home' || e.target.closest('[data-nav="home"]')) {
-        setTimeout(changeHeroBackground, 300);
-      }
+      document.body.style.backgroundImage = `url('${backgroundImages[0]}')`;
+      // Change background every 8 seconds
+      setInterval(changeBackgroundImage, 8000);
     });
   </script>
 
