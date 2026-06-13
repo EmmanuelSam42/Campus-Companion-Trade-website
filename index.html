@@ -361,6 +361,8 @@
     .filter-bar .btn-outline.active { border-color: var(--gold); color: var(--gold); }
 
     footer {
+      position: relative;
+      z-index: 1;
       background: var(--surface2); border-top: 1px solid #2a2a4a;
       padding: 2rem 3%; margin-top: 3rem; text-align: center;
     }
@@ -669,11 +671,10 @@
     <img id="lightbox-img" alt="" style="max-width:90%;max-height:90%;margin:auto;border-radius:8px" />
   </div>
 
-  <script>
-    // Full Background Image Shuffle
+<script>
     const backgroundImages = [
-      'https://www.magnific.com/free-photo/laptop-shopping-bags-online-shopping-concept_1203166.htm#fromView=image_search_similar&page=1&position=10&uuid=3ca86c2d-3dfe-4210-91fc-bcde5378abdc&query=ecommerce+Website+background'
-      'https://www.magnific.com/free-ai-image/black-friday-sales-sign-neon-light_325233278.htm#fromView=image_search_similar&page=1&position=9&uuid=3ca86c2d-3dfe-4210-91fc-bcde5378abdc&query=ecommerce+Website+background'
+      'https://www.magnific.com/free-photo/laptop-shopping-bags-online-shopping-concept_1203166.htm#fromView=image_search_similar&page=1&position=10&uuid=3ca86c2d-3dfe-4210-91fc-bcde5378abdc&query=ecommerce+Website+background',
+      'https://www.magnific.com/free-ai-image/black-friday-sales-sign-neon-light_325233278.htm#fromView=image_search_similar&page=1&position=9&uuid=3ca86c2d-3dfe-4210-91fc-bcde5378abdc&query=ecommerce+Website+background',
       'https://www.magnific.com/free-ai-image/shopping-bags-discount-online-sales_422915361.htm#fromView=image_search_similar&page=1&position=25&uuid=3ca86c2d-3dfe-4210-91fc-bcde5378abdc&query=ecommerce+Website+background'
     ];
 
@@ -695,7 +696,7 @@
       // Change background every 8 seconds
       setInterval(changeBackgroundImage, 20000);
     });
-  </script>
+</script>
 
   <script src="app.js"></script>
 </body>
