@@ -538,7 +538,7 @@ nav button.nav-link:hover {
 
 /* Hero */
 .hero {
-  position: relative;
+  position: sticky;
   margin-top: 80px;
   min-height: 450px;
   display: flex;
@@ -923,7 +923,7 @@ pro.section-title {
   background: var(--surface2);
   border-radius: var(--radius);
   overflow: hidden;
-  border: 1px solid var(--surface2);
+  border: 1px solid var(--surface);
   transition: var(--transition-smooth);
   position: relative;
 }
