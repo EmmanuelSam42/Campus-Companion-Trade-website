@@ -549,7 +549,7 @@ footer img { height: 60px; margin-bottom: 1rem; }
   backdrop-filter: blur(20px);
   border: 1px solid var(--border);
   border-radius: 999px;
-  padding: 0.6rem;
+  padding: 0.6rem;  
   display: none;
   justify-content: space-around;
   z-index: 1000;
