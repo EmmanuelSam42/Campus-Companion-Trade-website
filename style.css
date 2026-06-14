@@ -35,7 +35,7 @@
   --shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
   --overlay-bg: rgba(248, 249, 250, 0.7);
   --hero-deep: rgba(230, 230, 235, 0.7);
-  --header-bg: rgba(255, 255, 255, 0.8);
+  ---bg: rgba(255, 255, 255, 0.8);
   --card-hover-bg: rgba(195, 200, 212, 0.9);
   --btn-hover-bg: rgba(43, 42, 51, 0.05);
 }
@@ -263,6 +263,7 @@ header {
   border-bottom: 1px solid var(--border);
   position: fixed;
   top: 0;
+  buttom: 3px;
   width: 100%;
   z-index: 1000;
   transition: var(--transition-smooth);
