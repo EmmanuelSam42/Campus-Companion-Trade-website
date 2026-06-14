@@ -25,11 +25,6 @@ const STATE = {
   regRole: 'customer',
   adminPanel: 'overview',
   vendorPanel: 'overview',
-  adminApptFilter: 'all',
-  adminEditingProductId: null,
-  vendorEditingProductId: null,
-  vendorEditingHostelId: null,
-  adminExpandedOrderId: null,
   confirmCallback: null,
 };
 
@@ -116,7 +111,7 @@ function verifiedBadge() {
 }
 
 // ─── Router ──────────────────────────────────────────────────────────────────
-function navigate(page, opts = {}) {
+async function navigate(page, opts = {}) {
   if (page === 'auth' && STATE.profile?.status === 'approved') {
     page = STATE.profile.role === 'admin' ? 'admin' : STATE.profile.role === 'vendor' ? 'vendor-dashboard' : 'home';
   }
@@ -133,10 +128,17 @@ function navigate(page, opts = {}) {
     return;
   }
 
+  const currentEl = document.querySelector('.page.active');
+  if (currentEl) {
+    currentEl.classList.add('page-exiting');
+    await new Promise(r => setTimeout(r, 300));
+  }
+
   $$('.page').forEach((p) => {
-    p.classList.remove('active');
+    p.classList.remove('active', 'page-exiting');
     p.classList.add('hidden');
   });
+
   const el = $(`page-${page}`);
   if (el) {
     el.classList.remove('hidden');
@@ -169,6 +171,7 @@ function navigate(page, opts = {}) {
 
 function renderHeader() {
   const nav = $('main-nav');
+  const mNav = $('mobile-nav');
   const greet = $('user-greeting');
   const p = STATE.profile;
   const guest = !p;
@@ -206,21 +209,23 @@ function renderHeader() {
     ];
   }
 
-  nav.innerHTML = links
+  const generateNavHtml = (linksArr) => linksArr
     .map(([id, label]) => {
       let badge = '';
       if (id === 'cart' && STATE.cart.length) badge = `<span class="nav-badge">${STATE.cart.reduce((s, c) => s + c.quantity, 0)}</span>`;
       if (id === 'wishlist' && STATE.wishlist.length) badge = `<span class="nav-badge">${STATE.wishlist.length}</span>`;
       if (id === 'logout') return `<button type="button" class="nav-link" data-action="logout">${label}</button>`;
-      return `<button type="button" class="nav-link" data-nav="${id}">${label}${badge}</button>`;
+      return `<button type="button" class="nav-link ${STATE.currentPage === id ? 'active' : ''}" data-nav="${id}">${label}${badge}</button>`;
     })
     .join('');
+
+  if (nav) nav.innerHTML = generateNavHtml(links);
+  if (mNav) mNav.innerHTML = generateNavHtml(links);
 
   if (p) {
     greet.classList.remove('hidden');
     const vb = p.role === 'vendor' && p.verified ? verifiedBadge() : '';
-    const adminBadge = p.role === 'admin' ? '<span class="verified-badge">Admin</span>' : '';
-    greet.innerHTML = `<span class="user-pill">Hi, ${escapeHtml(p.full_name || 'User')}</span>${adminBadge}${vb}`;
+    greet.innerHTML = `<span class="user-pill">Hi, ${escapeHtml(p.full_name || 'User')}</span>${vb}`;
   } else {
     greet.classList.add('hidden');
     greet.innerHTML = '';
@@ -307,7 +312,6 @@ async function handleLogin(e) {
 
   const email = $('login-email').value.trim();
   const password = $('login-password').value;
-  const studentId = $('login-student-id').value.trim();
 
   const { data: authData, error } = await sb.auth.signInWithPassword({ email, password });
   if (error) {
@@ -325,16 +329,6 @@ async function handleLogin(e) {
   }
 
   const statusEl = $('login-status');
-  if (profile.student_id && studentId && profile.student_id !== studentId) {
-    await sb.auth.signOut();
-    statusEl.className = 'status-msg rejected';
-    statusEl.textContent = 'Student ID does not match this account.';
-    statusEl.classList.remove('hidden');
-    toast('error', 'Invalid Student ID.');
-    setLoading(btn, false);
-    return;
-  }
-
   if (profile.status === 'pending') {
     await sb.auth.signOut();
     statusEl.className = 'status-msg pending';
@@ -357,17 +351,11 @@ async function handleLogin(e) {
   STATE.user = authData.user;
   STATE.profile = profile;
   await loadUserData();
-  const roleLabel = { admin: 'Admin', vendor: 'Vendor', customer: 'Customer' }[profile.role] || profile.role;
-  toast('success', `Welcome, ${profile.full_name}! (${roleLabel})`);
+  toast('success', `Welcome, ${profile.full_name}!`);
 
   if (profile.role === 'admin') navigate('admin');
   else if (profile.role === 'vendor') navigate('vendor-dashboard');
-  else {
-    navigate('home');
-    if (profile.role === 'customer') {
-      toast('warning', 'Logged in as customer. Admin Panel appears only for admin accounts (set in Supabase).');
-    }
-  }
+  else navigate('home');
   setLoading(btn, false);
 }
 
@@ -442,11 +430,6 @@ async function logout() {
 // ─── Cart & Wishlist ─────────────────────────────────────────────────────────
 async function addToCart(productId, qty = 1) {
   if (!STATE.profile) { navigate('auth'); return; }
-  const prod = STATE.products.find((p) => p.id === productId);
-  if (prod && prod.in_stock === false) {
-    toast('error', 'This item is out of stock.');
-    return;
-  }
   const existing = STATE.cart.find((c) => c.product_id === productId);
   if (existing) {
     await sb.from('cart_items').update({ quantity: existing.quantity + qty }).eq('id', existing.id);
@@ -567,20 +550,45 @@ function productCardHtml(p) {
       <p style="font-size:.85rem;color:var(--muted)">${escapeHtml(vendor)}</p>
       <p style="font-size:.85rem">${escapeHtml(truncate(p.description))}</p>
       <p class="price">${formatCurrency(p.price)}</p>
-      ${p.in_stock === false ? '<span class="badge" style="color:var(--red)">Out of stock</span>' : ''}
       <p class="stars">${stars(p.avg_rating)} <small>(${p.review_count || 0})</small></p>
       <div class="card-actions">
         <button type="button" class="btn-outline" data-action="view-product" data-id="${p.id}">View</button>
         ${isSvc ? `<button type="button" class="btn-gold" data-action="book" data-id="${p.id}">Book</button>` : ''}
-        <button type="button" class="btn-primary" data-action="add-cart" data-id="${p.id}" ${p.in_stock === false ? 'disabled' : ''}>Cart</button>
+        <button type="button" class="btn-primary" data-action="add-cart" data-id="${p.id}">Cart</button>
         <button type="button" class="btn-icon ${wl ? 'active' : ''}" data-action="wishlist" data-id="${p.id}">♡</button>
       </div>
     </div>
   </article>`;
 }
 
+function renderProductsSkeleton() {
+  const skeleton = `
+  <article class="product-card">
+    <div class="skeleton" style="height:180px"></div>
+    <div class="card-body">
+      <div class="skeleton" style="width:30%; height:0.7rem; margin-bottom:0.5rem"></div>
+      <div class="skeleton" style="width:70%; height:1.2rem; margin-bottom:0.5rem"></div>
+      <div class="skeleton" style="width:90%; height:0.8rem; margin-bottom:0.5rem"></div>
+      <div class="skeleton" style="width:60%; height:0.8rem; margin-bottom:0.5rem"></div>
+      <div class="skeleton" style="width:40%; height:1.2rem; margin-top:0.5rem; margin-bottom:0.5rem"></div>
+      <div class="skeleton" style="width:30%; height:0.8rem"></div>
+      <div class="card-actions">
+        <div class="skeleton" style="flex:1; height:2rem"></div>
+        <div class="skeleton" style="flex:1; height:2rem"></div>
+        <div class="skeleton" style la-radius: 8px; flex:1; height:2rem"></div>
+        <div class="skeleton" style="width:30px; height:2rem"></div>
+      </div>
+    </div>
+  </article>`;
+  $('products-grid').innerHTML = Array(4).fill(skeleton).join('');
+}
+
 function renderProducts() {
   const list = filterProductsList();
+  if (!list.length && STATE.products.length === 0) {
+    renderProductsSkeleton();
+    return;
+  }
   $('products-grid').innerHTML = list.map(productCardHtml).join('');
   $('products-empty').classList.toggle('hidden', list.length > 0);
 }
@@ -647,14 +655,6 @@ async function customerPurchasedProduct(productId) {
 }
 
 // ─── Hostels ───────────────────────────────────────────────────────────────────
-function hostelTitle(h) {
-  return h.title || h.name || 'Hostel';
-}
-
-function hostelMonthlyPrice(h) {
-  return Number(h.price_per_month ?? h.price ?? 0);
-}
-
 function filterHostels() {
   const type = $('hostel-type-filter')?.value || '';
   const maxP = Number($('hostel-price-max')?.value || 5000);
@@ -663,7 +663,7 @@ function filterHostels() {
 
   return STATE.hostels.filter((h) => {
     if (type && h.type !== type) return false;
-    if (hostelMonthlyPrice(h) > maxP) return false;
+    if (h.price_per_month > maxP) return false;
     if (uni && !(h.university || '').toLowerCase().includes(uni) && !(h.location || '').toLowerCase().includes(uni)) return false;
     const am = h.amenities || [];
     if (amenityChecks.length && !amenityChecks.every((a) => am.includes(a))) return false;
@@ -679,8 +679,8 @@ function hostelCardHtml(h) {
     <img src="${img}" alt="" loading="lazy" />
     <div class="card-body" style="padding:1rem">
       <span class="badge">${escapeHtml(h.type)}</span>
-      <h4>${escapeHtml(hostelTitle(h))}</h4>
-      <p class="price">${formatCurrency(hostelMonthlyPrice(h))}/mo</p>
+      <h4>${escapeHtml(h.title)}</h4>
+      <p class="price">${formatCurrency(h.price_per_month)}/mo</p>
       <p style="font-size:.85rem">📍 ${escapeHtml(h.location || h.university || '')}</p>
       <p class="amenity-icons">${escapeHtml(am)}</p>
       <p style="font-size:.85rem">${escapeHtml(h.landlord_name || '')}</p>
@@ -693,8 +693,32 @@ function hostelCardHtml(h) {
   </article>`;
 }
 
+function renderHostelsSkeleton() {
+  const skeleton = `
+  <article class="hostel-card">
+    <div class="skeleton" style="height:200px"></div>
+    <div class="card-body" style="padding:1rem">
+      <div class="skeleton" style="width:30%; height:0.7rem; margin-bottom:0.5rem"></div>
+      <div class="skeleton" style="width:70%; height:1.2rem; margin-bottom:0.5rem"></div>
+      <div class="skeleton" style="width:40%; height:1.2rem; margin-bottom:0.5rem"></div>
+      <div class="skeleton" style="width:90%; height:0.8rem; margin-bottom:0.5rem"></div>
+      <div class="skeleton" style="width:60%; height:0.8rem; margin-bottom:0.5rem"></div>
+      <div class="card-actions">
+        <div class="skeleton" style="flex:1; height:2rem"></div>
+        <div class="skeleton" style="flex:1; height:2rem"></div>
+        <div class="skeleton" style="width:30px; height:2rem"></div>
+      </div>
+    </div>
+  </article>`;
+  $('hostels-grid').innerHTML = Array(3).fill(skeleton).join('');
+}
+
 function renderHostels() {
   const list = filterHostels();
+  if (!list.length && STATE.hostels.length === 0) {
+    renderHostelsSkeleton();
+    return;
+  }
   $('hostels-grid').innerHTML = list.map(hostelCardHtml).join('');
   $('hostels-empty').classList.toggle('hidden', list.length > 0);
 }
@@ -708,8 +732,8 @@ function renderHostelDetail(id) {
 
   $('hostel-detail-content').innerHTML = `
   <div class="gallery">${imgs.map((u, i) => `<img src="${u}" data-lightbox="${u}" alt="" />`).join('')}</div>
-  <h2>${escapeHtml(hostelTitle(h))}</h2>
-  <p class="price">${formatCurrency(hostelMonthlyPrice(h))}/month</p>
+  <h2>${escapeHtml(h.title)}</h2>
+  <p class="price">${formatCurrency(h.price_per_month)}/month</p>
   <p>📍 ${escapeHtml(h.location)} · ${escapeHtml(h.university || '')}</p>
   <p>Available from: ${formatDate(h.available_from)} · Units: ${h.units_available ?? 1}</p>
   <ul>${amHtml}</ul>
@@ -800,7 +824,6 @@ async function placeOrder(e) {
 
   const items = STATE.cart.map((c) => ({
     product_id: c.product_id,
-    vendor_id: c.products.vendor_id || null,
     name: c.products.name,
     price: c.products.price,
     quantity: c.quantity,
@@ -895,8 +918,8 @@ function renderWishlist() {
       return `<article class="product-card">
         <img src="${(h.images && h.images[0]) || ''}" alt="" />
         <div class="card-body">
-          <h4>${escapeHtml(hostelTitle(h))}</h4>
-          <p class="price">${formatCurrency(hostelMonthlyPrice(h))}/mo</p>
+          <h4>${escapeHtml(h.title)}</h4>
+          <p class="price">${formatCurrency(h.price_per_month)}/mo</p>
           <button class="btn-outline" data-action="view-hostel" data-id="${h.id}">View</button>
           <button class="btn-outline" data-action="wishlist-remove" data-wid="${w.id}">Remove</button>
         </div>
@@ -969,82 +992,25 @@ async function submitAppointment(e) {
   e.target.reset();
 }
 
-// ─── Vendor dashboard ────────────────────────────────────────────────────────
-const VENDOR_TABS = ['overview', 'products', 'add-product', 'hostels', 'add-hostel', 'orders', 'appointments', 'reviews', 'profile'];
-
-function getVendorProductIds(vendorId) {
-  return STATE.products.filter((p) => p.vendor_id === vendorId).map((p) => p.id);
-}
-
-function filterAppointmentsForVendor(appts, vendorId) {
-  const productIds = getVendorProductIds(vendorId);
-  return (appts || []).filter((a) => {
-    if (a.product_id && productIds.includes(a.product_id)) return true;
-    if (a.hostels_id) {
-      const h = STATE.hostels.find((x) => x.id === a.hostels_id);
-      return h?.vendor_id === vendorId;
-    }
-    return false;
-  });
-}
-
-function vendorHostelForm(hostel = null) {
-  const am = hostel?.amenities || [];
-  const amenityList = ['WiFi', 'Furnished', 'Water', 'AC'];
-  return `<form id="vendor-hostel-form" style="max-width:560px;margin-top:1rem">
-    <input type="hidden" name="id" value="${hostel?.id || ''}" />
-    <div class="form-group"><label>Property name</label><input name="title" required value="${escapeHtml(hostelTitle(hostel || {}))}" /></div>
-    <div class="form-group"><label>Type</label>
-      <select name="type">
-        ${['Single', 'Double', 'Self-Contained', 'Apartment', 'BQ'].map((t) => `<option ${hostel?.type === t ? 'selected' : ''}>${t}</option>`).join('')}
-      </select>
-    </div>
-    <div class="form-group"><label>Price per month (GH₵)</label><input name="price_per_month" type="number" step="0.01" required value="${hostel ? hostelMonthlyPrice(hostel) : ''}" /></div>
-    <div class="form-group"><label>Location</label><input name="location" value="${escapeHtml(hostel?.location || '')}" /></div>
-    <div class="form-group"><label>University</label><input name="university" value="${escapeHtml(hostel?.university || '')}" /></div>
-    <div class="form-group"><label>Available from</label><input name="available_from" type="date" value="${hostel?.available_from ? hostel.available_from.slice(0, 10) : ''}" /></div>
-    <div class="form-group"><label>Units available</label><input name="units_available" type="number" min="1" value="${hostel?.units_available ?? 1}" /></div>
-    <div class="form-group"><label>Landlord / agent name</label><input name="landlord_name" value="${escapeHtml(hostel?.landlord_name || STATE.profile?.full_name || '')}" /></div>
-    <div class="form-group"><label>Phone</label><input name="landlord_phone" value="${escapeHtml(hostel?.landlord_phone || STATE.profile?.phone || '')}" /></div>
-    <div class="form-group"><label>Rules</label><textarea name="rules" rows="2">${escapeHtml(hostel?.rules || '')}</textarea></div>
-    <div class="form-group"><label>Amenities</label>
-      ${amenityList.map((a) => `<label style="margin-right:.75rem"><input type="checkbox" name="amenity" value="${a}" ${am.includes(a) ? 'checked' : ''} /> ${a}</label>`).join('')}
-    </div>
-    <div class="form-group"><label>Cover image</label><input type="file" name="image" accept="image/*" /></div>
-    <p style="font-size:.8rem;color:var(--muted)">New listings await admin approval (status: pending).</p>
-    <button type="submit" class="btn-primary" data-label="Save Hostel">Save Hostel</button>
-  </form>`;
-}
+// ─── Vendor dashboard (condensed) ────────────────────────────────────────────
+const VENDOR_TABS = ['overview', 'products', 'add-product', 'orders', 'appointments', 'reviews', 'profile'];
 
 async function renderVendorDashboard() {
   const tabs = $('vendor-tabs');
   const panels = $('vendor-panels');
   tabs.innerHTML = VENDOR_TABS.map(
-    (t) => `<button type="button" data-vtab="${t}" class="${t === STATE.vendorPanel ? 'active' : ''}">${t.replace(/-/g, ' ')}</button>`
+    (t) => `<button type="button" data-vtab="${t}" class="${t === STATE.vendorPanel ? 'active' : ''}">${t.replace('-', ' ')}</button>`
   ).join('');
 
   const myProducts = STATE.products.filter((p) => p.vendor_id === STATE.profile.id);
-  const myProductIds = myProducts.map((p) => p.id);
-  const myHostels = STATE.hostels.filter((h) => h.vendor_id === STATE.profile.id);
-
   const myOrders = STATE.orders.filter((o) =>
-    (o.items || []).some((i) => i.vendor_id === STATE.profile.id || (i.product_id && myProductIds.includes(i.product_id)))
+    (o.items || []).some((i) => myProducts.some((p) => p.name === i.name))
   );
 
   const { data: appts } = await sb.from('appointments').select('*').order('created_at', { ascending: false });
-  const myAppts = filterAppointmentsForVendor(appts, STATE.profile.id);
+  const myAppts = (appts || []).filter((a) => a.vendor_name === STATE.profile.business_name || myProducts.some((p) => p.id === a.product_id));
 
-  const { data: revs } = await sb
-    .from('reviews')
-    .select('*, products(name)')
-    .in('product_id', myProductIds.length ? myProductIds : ['00000000-0000-0000-0000-000000000000']);
-
-  const editProduct = STATE.vendorEditingProductId
-    ? myProducts.find((p) => p.id === STATE.vendorEditingProductId)
-    : null;
-  const editHostel = STATE.vendorEditingHostelId
-    ? myHostels.find((h) => h.id === STATE.vendorEditingHostelId)
-    : null;
+  const { data: revs } = await sb.from('reviews').select('*, products(name)').in('product_id', myProducts.map((p) => p.id) || ['00000000-0000-0000-0000-000000000000']);
 
   const revenue = myOrders.reduce((s, o) => s + Number(o.total || 0), 0);
   const avgR = myProducts.length ? myProducts.reduce((s, p) => s + Number(p.avg_rating || 0), 0) / myProducts.length : 0;
@@ -1060,24 +1026,13 @@ async function renderVendorDashboard() {
     </div>
   </div>
   <div class="vendor-panel ${STATE.vendorPanel === 'products' ? 'active' : ''}" data-vpanel="products">
-    <button type="button" class="btn-primary" data-vtab="add-product" data-action="new-product">+ Add New Product</button>
-    <div class="table-wrap"><table class="data-table"><thead><tr><th>Name</th><th>Cat</th><th>Price</th><th>Stock</th><th></th></tr></thead>
-    <tbody>${myProducts.map(p=>`<tr><td>${escapeHtml(p.name)}</td><td>${escapeHtml(p.category)}</td><td>${formatCurrency(p.price)}</td><td>${p.in_stock?'Yes':'No'}</td>
-    <td><button type="button" data-action="edit-product" data-id="${p.id}">Edit</button><button type="button" data-action="delete-product" data-id="${p.id}">Delete</button></td></tr>`).join('')||'<tr><td colspan="5">No products yet.</td></tr>'}</tbody></table></div>
+    <button class="btn-primary" data-vtab="add-product">+ Add New Product</button>
+    <div class="table-wrap"><table class="data-table"><thead><tr><th>Name</th><th>Cat</th><th>Price</th><th>Stock</th><th>Featured</th><th></th></tr></thead>
+    <tbody>${myProducts.map(p=>`<tr><td>${escapeHtml(p.name)}</td><td>${escapeHtml(p.category)}</td><td>${formatCurrency(p.price)}</td><td>${p.in_stock?'Yes':'No'}</td><td>${p.featured?'★':''}</td>
+    <td><button data-action="edit-product" data-id="${p.id}">Edit</button><button data-action="delete-product" data-id="${p.id}">Delete</button></td></tr>`).join('')}</tbody></table></div>
   </div>
   <div class="vendor-panel ${STATE.vendorPanel === 'add-product' ? 'active' : ''}" data-vpanel="add-product">
-    <h4>${editProduct ? 'Edit product' : 'Add product'}</h4>
-    ${vendorProductForm(editProduct)}
-  </div>
-  <div class="vendor-panel ${STATE.vendorPanel === 'hostels' ? 'active' : ''}" data-vpanel="hostels">
-    <button type="button" class="btn-primary" data-action="new-hostel">+ Add Hostel Listing</button>
-    <div class="table-wrap"><table class="data-table"><thead><tr><th>Title</th><th>Type</th><th>Price/mo</th><th>Status</th><th></th></tr></thead>
-    <tbody>${myHostels.map(h=>`<tr><td>${escapeHtml(hostelTitle(h))}</td><td>${h.type}</td><td>${formatCurrency(hostelMonthlyPrice(h))}</td><td>${h.status}</td>
-    <td><button type="button" data-action="edit-hostel" data-id="${h.id}">Edit</button></td></tr>`).join('')||'<tr><td colspan="5">No hostels yet.</td></tr>'}</tbody></table></div>
-  </div>
-  <div class="vendor-panel ${STATE.vendorPanel === 'add-hostel' ? 'active' : ''}" data-vpanel="add-hostel">
-    <h4>${editHostel ? 'Edit hostel' : 'Add hostel'}</h4>
-    ${vendorHostelForm(editHostel)}
+    ${vendorProductForm()}
   </div>
   <div class="vendor-panel ${STATE.vendorPanel === 'orders' ? 'active' : ''}" data-vpanel="orders">
     <div class="table-wrap"><table class="data-table"><thead><tr><th>Order</th><th>Customer</th><th>Total</th><th>Status</th><th>Date</th></tr></thead>
@@ -1111,61 +1066,31 @@ function vendorProductForm(product = null) {
   </form>`;
 }
 
-// ─── Admin dashboard ───────────────────────────────────────────────────────────
+// ─── Admin dashboard (condensed) ─────────────────────────────────────────────
 const ADMIN_PANELS = [
   'overview', 'users', 'products', 'add-product', 'hostels', 'orders',
   'appointments', 'reviews', 'settings', 'create-admin', 'audit',
 ];
 
-function adminProductEditForm(product) {
-  if (!product) return '';
-  return `<form id="admin-edit-product-form" class="admin-inline-form" style="max-width:520px;margin:1rem 0;padding:1rem;background:var(--surface2);border-radius:var(--radius)">
-    <input type="hidden" name="id" value="${product.id}" />
-    <h4>Edit: ${escapeHtml(product.name)}</h4>
-    <div class="form-group"><label>Name</label><input name="name" required value="${escapeHtml(product.name)}" /></div>
-    <div class="form-group"><label>Category</label><input name="category" required value="${escapeHtml(product.category)}" /></div>
-    <div class="form-group"><label>Price (GH₵)</label><input name="price" type="number" step="0.01" required value="${product.price}" /></div>
-    <div class="form-group"><label>Description</label><textarea name="description" rows="3">${escapeHtml(product.description || '')}</textarea></div>
-    <div class="form-group"><label>Image URL</label><input name="image_url" value="${escapeHtml(product.image_url || '')}" /></div>
-    <label><input type="checkbox" name="featured" ${product.featured ? 'checked' : ''} /> Featured</label>
-    <label style="margin-left:1rem"><input type="checkbox" name="in_stock" ${product.in_stock !== false ? 'checked' : ''} /> In stock</label>
-    <div style="margin-top:1rem;display:flex;gap:.5rem">
-      <button type="submit" class="btn-primary" data-label="Save">Save</button>
-      <button type="button" class="btn-outline" data-action="cancel-admin-edit">Cancel</button>
-    </div>
-  </form>`;
-}
-
 async function renderAdminDashboard() {
   const sidebar = $('admin-sidebar');
   sidebar.innerHTML = ADMIN_PANELS.map(
-    (p) => `<button type="button" data-apanel="${p}" class="${p === STATE.adminPanel ? 'active' : ''}">${p.replace(/-/g, ' ')}</button>`
+    (p) => `<button type="button" data-apanel="${p}" class="${p === STATE.adminPanel ? 'active' : ''}">${p.replace('-', ' ')}</button>`
   ).join('');
 
-  const [{ data: profiles }, { data: allOrders }, { data: audit }, { data: appts }, { data: allReviews }] =
-    await Promise.all([
-      sb.from('profiles').select('*').order('created_at', { ascending: false }),
-      sb.from('orders').select('*').order('created_at', { ascending: false }),
-      sb.from('audit_log').select('*').order('created_at', { ascending: false }).limit(50),
-      sb.from('appointments').select('*').order('created_at', { ascending: false }),
-      sb.from('reviews').select('*, products(name)').order('created_at', { ascending: false }),
-    ]);
+  const [{ data: profiles }, { data: allOrders }, { data: audit }] = await Promise.all([
+    sb.from('profiles').select('*').order('created_at', { ascending: false }),
+    sb.from('orders').select('*').order('created_at', { ascending: false }),
+    sb.from('audit_log').select('*').order('created_at', { ascending: false }).limit(50),
+  ]);
 
   STATE.profiles = profiles || [];
   STATE.orders = allOrders || [];
-  STATE.appointments = appts || [];
   await loadProducts();
   await loadHostels();
 
   const pending = STATE.profiles.filter((p) => p.status === 'pending');
-  const deletionRequests = STATE.profiles.filter((p) => p.deletion_requested);
   const revenue = STATE.orders.reduce((s, o) => s + Number(o.total || 0), 0);
-  const editingProduct = STATE.adminEditingProductId
-    ? STATE.products.find((p) => p.id === STATE.adminEditingProductId)
-    : null;
-
-  const apptFilter = STATE.adminApptFilter;
-  const filteredAppts = STATE.appointments.filter((a) => apptFilter === 'all' || a.status === apptFilter);
 
   $('admin-panels').innerHTML = `
   <div class="admin-panel ${STATE.adminPanel === 'overview' ? 'active' : ''}" data-apanel="overview">
@@ -1182,15 +1107,6 @@ async function renderAdminDashboard() {
     <ul>${pending.slice(0,5).map(p=>`<li>${escapeHtml(p.full_name)} (${p.role}) — <button data-action="approve-user" data-id="${p.id}">Approve</button></li>`).join('')||'<li>None</li>'}</ul>
   </div>
   <div class="admin-panel ${STATE.adminPanel === 'users' ? 'active' : ''}" data-apanel="users">
-    <h4>Deletion requests (${deletionRequests.length})</h4>
-    ${deletionRequests.length ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Actions</th></tr></thead>
-    <tbody>${deletionRequests.map(p=>`<tr>
-      <td>${escapeHtml(p.full_name)}</td><td>${escapeHtml(p.email)}</td><td>${p.role}</td>
-      <td>
-        <button type="button" data-action="dismiss-deletion" data-id="${p.id}">Dismiss</button>
-        <button type="button" data-action="suspend-user" data-id="${p.id}">Suspend</button>
-      </td></tr>`).join('')}</tbody></table></div>` : '<p style="color:var(--muted);margin-bottom:1rem">No pending deletion requests.</p>'}
-    <h4>All users</h4>
     <div class="table-wrap"><table class="data-table"><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Business</th><th>Status</th><th>Actions</th></tr></thead>
     <tbody>${STATE.profiles.map(p=>`<tr>
       <td>${escapeHtml(p.full_name)}</td><td>${escapeHtml(p.email)}</td><td>${p.role}</td><td>${escapeHtml(p.business_name||'')}</td>
@@ -1203,17 +1119,11 @@ async function renderAdminDashboard() {
       </td></tr>`).join('')}</tbody></table></div>
   </div>
   <div class="admin-panel ${STATE.adminPanel === 'products' ? 'active' : ''}" data-apanel="products">
-    ${adminProductEditForm(editingProduct)}
     <div class="table-wrap"><table class="data-table"><thead><tr><th>Name</th><th>Cat</th><th>Price</th><th>Vendor</th><th>Featured</th><th>Stock</th><th></th></tr></thead>
     <tbody>${STATE.products.map(p=>`<tr>
       <td>${escapeHtml(p.name)}</td><td>${escapeHtml(p.category)}</td><td>${formatCurrency(p.price)}</td><td>${escapeHtml(p.vendor_name||'')}</td>
       <td>${p.featured?'Yes':'No'}</td><td>${p.in_stock?'Yes':'No'}</td>
-      <td>
-        <button type="button" data-action="admin-edit-product" data-id="${p.id}">Edit</button>
-        <button type="button" data-action="toggle-featured" data-id="${p.id}">Featured</button>
-        <button type="button" data-action="toggle-stock" data-id="${p.id}">Stock</button>
-        <button type="button" data-action="delete-product" data-id="${p.id}">Delete</button>
-      </td>
+      <td><button data-action="toggle-featured" data-id="${p.id}">Featured</button><button data-action="toggle-stock" data-id="${p.id}">Stock</button><button data-action="delete-product" data-id="${p.id}">Delete</button></td>
     </tr>`).join('')}</tbody></table></div>
   </div>
   <div class="admin-panel ${STATE.adminPanel === 'add-product' ? 'active' : ''}" data-apanel="add-product">
@@ -1233,56 +1143,23 @@ async function renderAdminDashboard() {
   </div>
   <div class="admin-panel ${STATE.adminPanel === 'hostels' ? 'active' : ''}" data-apanel="hostels">
     <div class="table-wrap"><table class="data-table"><thead><tr><th>Title</th><th>Type</th><th>Price/mo</th><th>Status</th><th></th></tr></thead>
-    <tbody>${STATE.hostels.map(h=>`<tr><td>${escapeHtml(hostelTitle(h))}</td><td>${h.type}</td><td>${formatCurrency(hostelMonthlyPrice(h))}</td><td>${h.status}</td>
+    <tbody>${STATE.hostels.map(h=>`<tr><td>${escapeHtml(h.title)}</td><td>${h.type}</td><td>${formatCurrency(h.price_per_month)}</td><td>${h.status}</td>
     <td>${h.status==='pending'?`<button data-action="approve-hostel" data-id="${h.id}">Approve</button>`:''}
     <button data-action="occupy-hostel" data-id="${h.id}">Occupied</button>
     <button data-action="delete-hostel" data-id="${h.id}">Delete</button></td></tr>`).join('')}</tbody></table></div>
   </div>
   <div class="admin-panel ${STATE.adminPanel === 'orders' ? 'active' : ''}" data-apanel="orders">
-    <div class="table-wrap"><table class="data-table"><thead><tr><th></th><th>Order</th><th>Customer</th><th>Total</th><th>Payment</th><th>Status</th><th>Update</th></tr></thead>
-    <tbody>${STATE.orders.map(o=>{
-      const expanded = STATE.adminExpandedOrderId === o.id;
-      return `<tr class="admin-order-row" data-order-row="${o.id}">
-        <td><button type="button" data-action="toggle-admin-order" data-id="${o.id}">${expanded ? '▼' : '▶'}</button></td>
-        <td class="order-number">${escapeHtml(o.order_number)}</td><td>${escapeHtml(o.user_name||'')}</td><td>${formatCurrency(o.total)}</td><td>${escapeHtml(o.payment_method||'')}</td>
-        <td><span class="status-pill status-${o.status}">${o.status}</span></td>
-        <td><select data-action="order-status" data-id="${o.id}">
-          ${['Processing','Confirmed','Delivered','Cancelled'].map(s=>`<option value="${s}" ${s===o.status?'selected':''}>${s}</option>`).join('')}
-        </select></td></tr>
-        <tr class="admin-order-detail ${expanded ? '' : 'hidden'}" id="admin-order-detail-${o.id}"><td colspan="7">
-          <p><strong>Phone:</strong> ${escapeHtml(o.delivery_phone||'')} · <strong>Address:</strong> ${escapeHtml(o.delivery_address||'')}</p>
-          <p><strong>Notes:</strong> ${escapeHtml(o.notes||'—')}</p>
-          <div style="display:flex;flex-wrap:wrap;gap:1rem;margin-top:.5rem">
-            ${(o.items||[]).map(i=>`<div style="display:flex;gap:.5rem;align-items:center">
-              <img src="${i.image_url||''}" alt="" style="width:48px;height:48px;object-fit:cover;border-radius:6px" onerror="this.style.display='none'" />
-              <span>${escapeHtml(i.name)} × ${i.quantity} — ${formatCurrency((i.price||0)*i.quantity)}</span>
-            </div>`).join('')}
-          </div>
-        </td></tr>`;
-    }).join('')}</tbody></table></div>
+    <div class="table-wrap"><table class="data-table"><thead><tr><th>Order</th><th>Customer</th><th>Total</th><th>Payment</th><th>Status</th><th>Update</th></tr></thead>
+    <tbody>${STATE.orders.map(o=>`<tr><td>${o.order_number}</td><td>${escapeHtml(o.user_name||'')}</td><td>${formatCurrency(o.total)}</td><td>${o.payment_method}</td><td>${o.status}</td>
+    <td><select data-action="order-status" data-id="${o.id}">
+      ${['Processing','Confirmed','Delivered','Cancelled'].map(s=>`<option ${s===o.status?'selected':''}>${s}</option>`).join('')}
+    </select></td></tr>`).join('')}</tbody></table></div>
   </div>
   <div class="admin-panel ${STATE.adminPanel === 'appointments' ? 'active' : ''}" data-apanel="appointments">
-    <div class="filter-bar" style="margin-bottom:1rem">
-      <label>Filter:</label>
-      ${['all','pending','confirmed','cancelled'].map(f=>`<button type="button" class="btn-outline ${apptFilter===f?'active':''}" data-action="admin-appt-filter" data-filter="${f}">${f}</button>`).join('')}
-    </div>
-    <div class="table-wrap"><table class="data-table"><thead><tr><th>Customer</th><th>Service</th><th>Vendor</th><th>Date</th><th>Time</th><th>Status</th><th></th></tr></thead>
-    <tbody>${filteredAppts.map(a=>`<tr>
-      <td>${escapeHtml(a.user_name||'')}</td><td>${escapeHtml(a.service_name||'')}</td><td>${escapeHtml(a.vendor_name||'')}</td>
-      <td>${formatDate(a.preferred_date)}</td><td>${escapeHtml(a.preferred_time||'')}</td>
-      <td><span class="status-pill status-${a.status==='confirmed'?'Confirmed':a.status==='cancelled'?'Cancelled':'Processing'}">${a.status}</span></td>
-      <td>${a.status==='pending'?`<button type="button" data-action="appt-confirm" data-id="${a.id}">Confirm</button><button type="button" data-action="appt-cancel" data-id="${a.id}">Cancel</button>`:'—'}</td>
-    </tr>`).join('')||'<tr><td colspan="7">No appointments.</td></tr>'}</tbody></table></div>
+    <p>Load appointments from Supabase in the appointments panel.</p>
   </div>
   <div class="admin-panel ${STATE.adminPanel === 'reviews' ? 'active' : ''}" data-apanel="reviews">
-    <div class="table-wrap"><table class="data-table"><thead><tr><th>Product</th><th>Customer</th><th>Rating</th><th>Review</th><th>Date</th><th></th></tr></thead>
-    <tbody>${(allReviews||[]).map(r=>`<tr class="${r.flagged?'':''}">
-      <td>${escapeHtml(r.products?.name||'—')}</td><td>${escapeHtml(r.user_name||'')}</td><td>${stars(r.rating)}</td>
-      <td>${escapeHtml(truncate(r.body,120))}</td><td>${formatDate(r.created_at)}</td>
-      <td>
-        ${r.flagged ? '<span class="badge">Flagged</span>' : `<button type="button" data-action="flag-review" data-id="${r.id}">Flag</button>`}
-        <button type="button" data-action="delete-review" data-id="${r.id}">Delete</button>
-      </td></tr>`).join('')||'<tr><td colspan="6">No reviews.</td></tr>'}</tbody></table></div>
+    <p>Reviews management — flag/delete via admin actions.</p>
   </div>
   <div class="admin-panel ${STATE.adminPanel === 'settings' ? 'active' : ''}" data-apanel="settings">
     <form id="admin-settings-form" style="max-width:480px">
@@ -1297,13 +1174,9 @@ async function renderAdminDashboard() {
       <div class="form-group"><label>Name</label><input name="name" required /></div>
       <div class="form-group"><label>Email</label><input name="email" type="email" required /></div>
       <div class="form-group"><label>Password</label><input name="password" type="password" required minlength="6" /></div>
-      <button type="submit" class="btn-primary" data-label="Create Admin Account">Create Admin Account</button>
+      <button type="submit" class="btn-primary" data-label="Create Admin">Create Admin</button>
+      <p style="font-size:.8rem;color:var(--muted);margin-top:.5rem">After signup, run SQL to set role=admin and status=approved, or use service role Edge Function.</p>
     </form>
-    <p style="font-size:.85rem;color:var(--muted);margin-top:1rem;max-width:480px">
-      Creates the auth user and profile, then auto-sets <strong>role=admin</strong> and <strong>status=approved</strong>.
-      They can log in immediately with the same form as everyone else.
-    </p>
-    <div id="create-admin-result" class="hidden status-msg pending" style="margin-top:1rem;max-width:480px"></div>
   </div>
   <div class="admin-panel ${STATE.adminPanel === 'audit' ? 'active' : ''}" data-apanel="audit">
     <div class="table-wrap"><table class="data-table"><thead><tr><th>Action</th><th>Target</th><th>Admin</th><th>When</th></tr></thead>
@@ -1326,12 +1199,7 @@ document.addEventListener('click', async (e) => {
       else navigate('products');
     }
     const vtab = e.target.closest('[data-vtab]');
-    if (vtab && !vtab.dataset.action) {
-      STATE.vendorPanel = vtab.dataset.vtab;
-      if (vtab.dataset.vtab === 'add-product') STATE.vendorEditingProductId = null;
-      if (vtab.dataset.vtab === 'add-hostel') STATE.vendorEditingHostelId = null;
-      renderVendorDashboard();
-    }
+    if (vtab) { STATE.vendorPanel = vtab.dataset.vtab; renderVendorDashboard(); }
     const apanel = e.target.closest('[data-apanel]');
     if (apanel && apanel.tagName === 'BUTTON') { STATE.adminPanel = apanel.dataset.apanel; renderAdminDashboard(); }
     const orderCard = e.target.closest('.order-card');
@@ -1461,72 +1329,12 @@ document.addEventListener('click', async (e) => {
       break;
     case 'appt-confirm':
       await sb.from('appointments').update({ status: 'confirmed' }).eq('id', id);
-      if (STATE.currentPage === 'admin') renderAdminDashboard();
-      else renderVendorDashboard();
+      renderVendorDashboard();
       toast('success', 'Appointment confirmed');
       break;
     case 'appt-cancel':
       await sb.from('appointments').update({ status: 'cancelled' }).eq('id', id);
-      if (STATE.currentPage === 'admin') renderAdminDashboard();
-      else renderVendorDashboard();
-      toast('warning', 'Appointment cancelled');
-      break;
-    case 'edit-product':
-      STATE.vendorEditingProductId = id;
-      STATE.vendorPanel = 'add-product';
       renderVendorDashboard();
-      break;
-    case 'new-product':
-      STATE.vendorEditingProductId = null;
-      STATE.vendorPanel = 'add-product';
-      renderVendorDashboard();
-      break;
-    case 'edit-hostel':
-      STATE.vendorEditingHostelId = id;
-      STATE.vendorPanel = 'add-hostel';
-      renderVendorDashboard();
-      break;
-    case 'new-hostel':
-      STATE.vendorEditingHostelId = null;
-      STATE.vendorPanel = 'add-hostel';
-      renderVendorDashboard();
-      break;
-    case 'admin-edit-product':
-      STATE.adminEditingProductId = id;
-      STATE.adminPanel = 'products';
-      renderAdminDashboard();
-      break;
-    case 'cancel-admin-edit':
-      STATE.adminEditingProductId = null;
-      renderAdminDashboard();
-      break;
-    case 'toggle-admin-order':
-      STATE.adminExpandedOrderId = STATE.adminExpandedOrderId === id ? null : id;
-      renderAdminDashboard();
-      break;
-    case 'admin-appt-filter':
-      STATE.adminApptFilter = action.dataset.filter;
-      renderAdminDashboard();
-      break;
-    case 'dismiss-deletion':
-      await sb.from('profiles').update({ deletion_requested: false }).eq('id', id);
-      await logAdmin('dismiss_deletion', 'user', id, id);
-      toast('success', 'Deletion request dismissed');
-      renderAdminDashboard();
-      break;
-    case 'flag-review':
-      await sb.from('reviews').update({ flagged: true }).eq('id', id);
-      await logAdmin('flag_review', 'review', id, id);
-      toast('warning', 'Review flagged');
-      renderAdminDashboard();
-      break;
-    case 'delete-review':
-      confirmDialog('Delete review', 'Remove this review permanently?', async () => {
-        await sb.from('reviews').delete().eq('id', id);
-        await logAdmin('delete_review', 'review', id, id);
-        toast('success', 'Review deleted');
-        renderAdminDashboard();
-      });
       break;
     case 'order-status':
       break;
@@ -1548,23 +1356,6 @@ document.addEventListener('change', async (e) => {
 
 $('login-form')?.addEventListener('submit', handleLogin);
 $('register-form')?.addEventListener('submit', handleRegister);
-
-$('forgot-password-toggle')?.addEventListener('click', () => {
-  $('forgot-password-form')?.classList.toggle('hidden');
-});
-
-$('forgot-password-form')?.addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const email = $('forgot-email').value.trim();
-  const btn = e.target.querySelector('[type=submit]');
-  setLoading(btn, true);
-  const { error } = await sb.auth.resetPasswordForEmail(email, {
-    redirectTo: window.location.origin + window.location.pathname,
-  });
-  if (error) toast('error', error.message);
-  else toast('success', 'Check your email for the password reset link.');
-  setLoading(btn, false);
-});
 $$('.role-tab').forEach((tab) => {
   tab.addEventListener('click', () => {
     $$('.role-tab').forEach((t) => t.classList.remove('active'));
@@ -1672,8 +1463,6 @@ document.addEventListener('submit', async (e) => {
     let image_url = '';
     const file = fd.get('image');
     if (file?.size) image_url = await uploadFile('products', `${Date.now()}-${file.name}`, file);
-    const pid = fd.get('id');
-    const existing = pid ? STATE.products.find((p) => p.id === pid) : null;
     const row = {
       name: fd.get('name'),
       category: fd.get('category'),
@@ -1683,110 +1472,15 @@ document.addEventListener('submit', async (e) => {
       availability_hours: fd.get('availability_hours'),
       vendor_id: STATE.profile.id,
       vendor_name: STATE.profile.business_name || STATE.profile.full_name,
-      image_url: image_url || existing?.image_url || null,
+      image_url: image_url || undefined,
     };
+    const pid = fd.get('id');
     if (pid) await sb.from('products').update(row).eq('id', pid);
     else await sb.from('products').insert(row);
     await loadProducts();
     toast('success', 'Product saved');
-    STATE.vendorEditingProductId = null;
     STATE.vendorPanel = 'products';
     renderVendorDashboard();
-  }
-  if (e.target.id === 'vendor-hostel-form') {
-    e.preventDefault();
-    const fd = new FormData(e.target);
-    const amenities = fd.getAll('amenity');
-    let images = [];
-    const file = fd.get('image');
-    const hid = fd.get('id');
-    const existing = hid ? STATE.hostels.find((h) => h.id === hid) : null;
-    if (file?.size) {
-      const url = await uploadFile('hostels', `${Date.now()}-${file.name}`, file);
-      images = [url];
-    } else if (existing?.images?.length) {
-      images = existing.images;
-    }
-    const title = fd.get('title').trim();
-    const price = Number(fd.get('price_per_month'));
-    const row = {
-      name: title,
-      title,
-      type: fd.get('type'),
-      price,
-      price_per_month: price,
-      location: fd.get('location'),
-      university: fd.get('university'),
-      amenities,
-      available_from: fd.get('available_from') || null,
-      units_available: Number(fd.get('units_available')) || 1,
-      landlord_name: fd.get('landlord_name'),
-      landlord_phone: fd.get('landlord_phone'),
-      rules: fd.get('rules'),
-      images,
-      vendor_id: STATE.profile.id,
-      status: existing?.status || 'pending',
-    };
-    if (hid) await sb.from('hostels_listings').update(row).eq('id', hid);
-    else await sb.from('hostels_listings').insert(row);
-    await loadHostels();
-    toast('success', hid ? 'Hostel updated' : 'Hostel submitted for approval');
-    STATE.vendorEditingHostelId = null;
-    STATE.vendorPanel = 'hostels';
-    renderVendorDashboard();
-  }
-  if (e.target.id === 'admin-edit-product-form') {
-    e.preventDefault();
-    const fd = new FormData(e.target);
-    const id = fd.get('id');
-    await sb.from('products').update({
-      name: fd.get('name'),
-      category: fd.get('category'),
-      price: Number(fd.get('price')),
-      description: fd.get('description'),
-      image_url: fd.get('image_url'),
-      featured: fd.get('featured') === 'on',
-      in_stock: fd.get('in_stock') === 'on',
-    }).eq('id', id);
-    await logAdmin('edit_product', 'product', id, fd.get('name'));
-    await loadProducts();
-    toast('success', 'Product updated');
-    STATE.adminEditingProductId = null;
-    renderAdminDashboard();
-  }
-  if (e.target.id === 'create-admin-form') {
-    e.preventDefault();
-    const fd = new FormData(e.target);
-    const btn = e.target.querySelector('[type=submit]');
-    setLoading(btn, true);
-    const email = fd.get('email').trim();
-    const name = fd.get('name').trim();
-    const password = fd.get('password');
-    const { data, error } = await sb.auth.signUp({
-      email,
-      password,
-      options: { data: { full_name: name, role: 'admin' } },
-    });
-    if (error) {
-      toast('error', error.message);
-      setLoading(btn, false);
-      return;
-    }
-    if (data.user?.id) {
-      await sb.from('profiles').update({
-        role: 'admin',
-        status: 'approved',
-        verified: true,
-        full_name: name,
-      }).eq('id', data.user.id);
-    }
-    const res = $('create-admin-result');
-    res.classList.remove('hidden');
-    res.innerHTML = `Admin <strong>${escapeHtml(email)}</strong> created. They can log in now.`;
-    await logAdmin('create_admin', 'user', data.user?.id, email);
-    toast('success', 'Admin account created');
-    e.target.reset();
-    setLoading(btn, false);
   }
   if (e.target.id === 'admin-product-form') {
     e.preventDefault();
@@ -1847,23 +1541,9 @@ async function boot() {
         if (profile.role === 'admin') navigate('admin');
         else if (profile.role === 'vendor') navigate('vendor-dashboard');
         else navigate('home');
-      } else if (profile) {
-        const statusEl = $('login-status');
-        statusEl.classList.remove('hidden');
-        if (profile.status === 'pending') {
-          statusEl.className = 'status-msg pending';
-          statusEl.innerHTML =
-            'Your account is <strong>pending approval</strong>. An admin must approve you in Supabase, or run <code>01-make-admin.sql</code> for your email to become the first admin.';
-        } else {
-          statusEl.className = 'status-msg rejected';
-          statusEl.textContent = `Account status: ${profile.status}. Contact support.`;
-        }
-        await sb.auth.signOut();
-        navigate('auth');
       } else {
         await sb.auth.signOut();
         navigate('auth');
-        toast('error', 'Profile missing. Check Supabase profiles table.');
       }
     } else {
       await loadHostels();
