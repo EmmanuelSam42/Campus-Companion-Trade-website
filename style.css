@@ -539,9 +539,9 @@ nav button.nav-link:hover {
 
 /* Hero */
 .hero {
-  position: relative;
+  position: sticky;
   margin-top: 80px;
-  margin-buttom: 3px;
+  margin-buttom: 40px;
   min-height: 450px;
   display: flex;
   align-items: center;
@@ -630,6 +630,8 @@ pro.section-title {
 }
 
 .category-card {
+  margin-top: 2px;
+  margin-buttom: 2px;
   border-radius: var(--radius);
   overflow: hidden;
   background: var(--surface2);
@@ -661,6 +663,8 @@ pro.section-title {
 }
 
 .product-card {
+  margin-top: 2px;
+  margin-buttom: 2px;
   background: var(--surface2);
   border-radius: var(--radius);
   overflow: hidden;
