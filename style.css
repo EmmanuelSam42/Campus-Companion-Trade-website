@@ -541,6 +541,7 @@ nav button.nav-link:hover {
 .hero {
   position: sticky;
   margin-top: 80px;
+  margin-buttom: 3px;
   min-height: 450px;
   display: flex;
   align-items: center;
