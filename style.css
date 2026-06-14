@@ -263,7 +263,7 @@ header {
   border-bottom: 1px solid var(--border);
   position: fixed;
   top: 0;
-  buttom: 3px;
+  buttom: 50px;
   width: 100%;
   z-index: 1000;
   transition: var(--transition-smooth);
@@ -539,7 +539,7 @@ nav button.nav-link:hover {
 
 /* Hero */
 .hero {
-  position: sticky;
+  position: relative;
   margin-top: 80px;
   margin-buttom: 3px;
   min-height: 450px;
