@@ -28,7 +28,18 @@ const STATE = {
   confirmCallback: null,
 };
 
-// ─── Utils ───────────────────────────────────────────────────────────────────
+function initTheme() {
+  const saved = localStorage.getItem('theme') || 'dark';
+  document.documentElement.setAttribute('data-theme', saved);
+}
+
+function toggleTheme() {
+  const current = document.documentElement.getAttribute('data-theme');
+  const next = current === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', next);
+  localStorage.setItem('theme', next);
+}
+
 function $(id) { return document.getElementById(id); }
 function $$(sel, root = document) { return [...root.querySelectorAll(sel)]; }
 
@@ -219,7 +230,12 @@ function renderHeader() {
     })
     .join('');
 
-  if (nav) nav.innerHTML = generateNavHtml(links);
+  if (nav) {
+    nav.innerHTML = `
+      ${generateNavHtml(links)}
+      <button type="button" id="theme-toggle" class="btn-icon" title="Toggle Theme">🌓</button>
+    `;
+  }
   if (mNav) mNav.innerHTML = generateNavHtml(links);
 
   if (p) {
@@ -303,7 +319,26 @@ async function loadUserData() {
   await Promise.all([loadCart(), loadWishlist(), loadOrders()]);
 }
 
-// ─── Auth ────────────────────────────────────────────────────────────────────
+async function handleForgotPassword(e) {
+  e.preventDefault();
+  const btn = e.target.querySelector('[type=submit]');
+  setLoading(btn, true);
+
+  const email = $('forgot-email').value.trim();
+  const { error } = await sb.auth.resetPasswordForEmail(email);
+
+  if (error) {
+    toast('error', error.message);
+  } else {
+    toast('success', 'Password reset link sent to your email!');
+    $('forgot-password-form').reset();
+    // Optionally hide the form and show login again
+    $('forgot-password-form').classList.add('hidden');
+    $('login-form').classList.remove('hidden');
+    $('forgot-password-toggle').textContent = 'Forgot password?';
+  }
+  setLoading(btn, false);
+}
 async function handleLogin(e) {
   e.preventDefault();
   const btn = e.target.querySelector('[type=submit]');
@@ -575,7 +610,7 @@ function renderProductsSkeleton() {
       <div class="card-actions">
         <div class="skeleton" style="flex:1; height:2rem"></div>
         <div class="skeleton" style="flex:1; height:2rem"></div>
-        <div class="skeleton" style la-radius: 8px; flex:1; height:2rem"></div>
+        <div class="skeleton" style="border-radius: 8px; flex:1; height:2rem"></div>
         <div class="skeleton" style="width:30px; height:2rem"></div>
       </div>
     </div>
@@ -1186,6 +1221,37 @@ async function renderAdminDashboard() {
 
 // ─── Event delegation ────────────────────────────────────────────────────────
 document.addEventListener('click', async (e) => {
+  if (e.target.id === 'theme-toggle') {
+    toggleTheme();
+    return;
+  }
+
+  if (e.target.id === 'forgot-password-toggle') {
+    const loginForm = $('login-form');
+    const forgotForm = $('forgot-password-form');
+    const isHidden = forgotForm.classList.contains('hidden');
+    loginForm.classList.toggle('hidden', isHidden);
+    forgotForm.classList.toggle('hidden', !isHidden);
+    if (isHidden) {
+      e.target.textContent = 'Back to Login';
+    } else {
+      e.target.textContent = 'Forgot password?';
+    }
+    return;
+  }
+
+  const togglePwd = e.target.closest('.toggle-password');
+  if (togglePwd) {
+    const targetId = togglePwd.dataset.target;
+    const input = $(targetId);
+    if (input) {
+      const isPassword = input.type === 'password';
+      input.type = isPassword ? 'text' : 'password';
+      togglePwd.textContent = isPassword ? '🙈' : '👁️';
+    }
+    return;
+  }
+
   const t = e.target.closest('[data-nav]');
   if (t) { e.preventDefault(); navigate(t.dataset.nav); return; }
 
@@ -1444,19 +1510,23 @@ $('request-deletion')?.addEventListener('click', () => {
 });
 
 document.addEventListener('submit', async (e) => {
+  if (e.target.id === 'forgot-password-form') {
+    await handleForgotPassword(e);
+    return;
+  }
   if (e.target.id === 'review-form') {
     e.preventDefault();
     const fd = new FormData(e.target);
     const { error } = await sb.from('reviews').insert({
-      product_id: fd.get('product_id'),
-      user_id: STATE.profile.id,
-      user_name: STATE.profile.full_name,
-      rating: Number(fd.get('rating')),
-      body: fd.get('body'),
-    });
-    if (error) toast('error', error.message);
-    else { toast('success', 'Review submitted'); renderDetail(fd.get('product_id')); }
-  }
+    product_id: fd.get('product_id'),
+    user_id: STATE.profile.id,
+    user_name: STATE.profile.full_name,
+    rating: Number(fd.get('rating')),
+    body: fd.get('body'),
+  });
+  if (error) toast('error', error.message);
+  else { toast('success', 'Review submitted'); renderDetail(fd.get('product_id')); }
+}
   if (e.target.id === 'vendor-product-form') {
     e.preventDefault();
     const fd = new FormData(e.target);
@@ -1522,6 +1592,7 @@ document.addEventListener('submit', async (e) => {
 
 // ─── Boot ────────────────────────────────────────────────────────────────────
 async function boot() {
+  initTheme();
   $('year').textContent = new Date().getFullYear();
   const apptSelect = $('appt-time');
   if (apptSelect) apptSelect.innerHTML = TIME_SLOTS.map((t) => `<option>${t}</option>`).join('');
