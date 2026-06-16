@@ -114,6 +114,34 @@
       </div>
     </div>
 
+    <div id="page-reset-password" class="page hidden">
+      <div class="auth-grid" style="justify-content: center;">
+        <div class="auth-panel" style="max-width: 400px;">
+          <h2>Reset Password</h2>
+          <p class="auth-hint" style="font-size:.85rem;color:var(--muted);margin-bottom:1rem;line-height:1.5">
+            Enter your new password below to secure your account.
+          </p>
+          <form id="reset-password-form">
+            <div class="form-group password-field">
+              <label>New Password</label>
+              <div class="input-wrapper">
+                <input type="password" id="reset-password" required minlength="6" />
+                <button type="button" class="toggle-password" data-target="reset-password">👁️</button>
+              </div>
+            </div>
+            <div class="form-group password-field">
+              <label>Confirm New Password</label>
+              <div class="input-wrapper">
+                <input type="password" id="reset-password2" required />
+                <button type="button" class="toggle-password" data-target="reset-password2">👁️</button>
+              </div>
+            </div>
+            <button type="submit" class="btn-gold" style="width:100%" data-label="Update Password">Update Password</button>
+          </form>
+        </div>
+      </div>
+    </div>
+
     <div id="page-home" class="page hidden">
       <section class="hero" id="hero-section">
         <div class="hero-content">
@@ -125,17 +153,11 @@
           </div>
         </div>
       </section>
-      
       <h3 class="section-title">Categories</h3>
-      
       <div class="grid-4" id="home-categories"></div>
-      
       <h3 class="section-title">Featured</h3>
-      
       <div class="grid-4" id="home-featured"></div>
-      
       <h3 class="section-title">Why Campus Companion?</h3>
-
       <div class="value-grid">
         <div class="value-card"><div class="icon">✓</div><h4>Verified Vendors</h4><p>Trusted sellers across campus</p></div>
         <div class="value-card"><div class="icon">⚡</div><h4>Fast Campus Delivery</h4><p>GH₵ 5 flat delivery fee</p></div>
