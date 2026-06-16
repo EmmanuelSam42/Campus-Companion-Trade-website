@@ -345,7 +345,7 @@ nav button.nav-link:hover {
 }
 
 .user-pill {
-  background: linear-gradient(135deg, #7e5205, #d39b0d);
+  background: linear-gradient(150deg, #ffffff, #6793df);
   color: #05050a;
   font-style: italic;
   font-weight: 600;
@@ -355,9 +355,8 @@ nav button.nav-link:hover {
   display: flex;
   align-items: center;
   gap: 0.35rem;
-  box-shadow: 0 4px 12px var(--gold-glow);
+  box-shadow: 0 4px 12px var(--surface2);
 }
-
 .verified-badge {
   background: var(--gold);
   color: #05050a;
