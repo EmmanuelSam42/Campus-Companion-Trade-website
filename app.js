@@ -175,6 +175,7 @@ async function navigate(page, opts = {}) {
     case 'orders': renderOrders(); break;
     case 'wishlist': renderWishlist(); break;
     case 'profile': renderProfileForm(); break;
+    case 'reset-password': break; // Static form
     case 'vendor-dashboard': renderVendorDashboard(); break;
     case 'admin': renderAdminDashboard(); break;
   }
@@ -339,6 +340,29 @@ async function handleForgotPassword(e) {
   }
   setLoading(btn, false);
 }
+async function handleResetPassword(e) {
+  e.preventDefault();
+  const btn = e.target.querySelector('[type=submit]');
+  const p1 = $('reset-password').value;
+  const p2 = $('reset-password2').value;
+
+  if (p1 !== p2) {
+    toast('error', 'Passwords do not match.');
+    return;
+  }
+
+  setLoading(btn, true);
+  const { error } = await sb.auth.updateUser({ password: p1 });
+
+  if (error) {
+    toast('error', error.message);
+  } else {
+    toast('success', 'Password updated successfully!');
+    navigate('auth');
+  }
+  setLoading(btn, false);
+}
+
 async function handleLogin(e) {
   e.preventDefault();
   const btn = e.target.querySelector('[type=submit]');
@@ -616,6 +640,35 @@ function renderProductsSkeleton() {
     </div>
   </article>`;
   $('products-grid').innerHTML = Array(4).fill(skeleton).join('');
+}
+
+function renderOrdersSkeleton() {
+  const skeleton = `
+  <div class="order-card">
+    <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:.5rem">
+      <div class="skeleton" style="width:100px; height:1rem"></div>
+      <div class="skeleton" style="width:80px; height:1rem"></div>
+    </div>
+    <div class="skeleton" style="width:60%; height:0.8rem; margin-top:0.5rem"></div>
+    <div class="skeleton" style="width:90%; height:0.8rem; margin-top:0.5rem"></div>
+  </div>`;
+  $('orders-list').innerHTML = Array(3).fill(skeleton).join('');
+}
+
+function renderWishlistSkeleton() {
+  const skeleton = `
+  <article class="product-card">
+    <div class="skeleton" style="height:180px"></div>
+    <div class="card-body">
+      <div class="skeleton" style="width:70%; height:1.2rem; margin-bottom:0.5rem"></div>
+      <div class="skeleton" style="width:40%; height:1.2rem; margin-bottom:0.5rem"></div>
+      <div class="card-actions">
+        <div class="skeleton" style="flex:1; height:2rem"></div>
+        <div class="skeleton" style="flex:1; height:2rem"></div>
+      </div>
+    </div>
+  </article>`;
+  $('wishlist-grid').innerHTML = Array(4).fill(skeleton).join('');
 }
 
 function renderProducts() {
@@ -914,6 +967,10 @@ async function placeOrder(e) {
 
 function renderOrders() {
   const list = STATE.orders;
+  if (!list.length && STATE.orders.length === 0) {
+    renderOrdersSkeleton();
+    return;
+  }
   $('orders-empty').classList.toggle('hidden', list.length > 0);
   $('orders-list').innerHTML = list
     .map(
@@ -933,6 +990,10 @@ function renderOrders() {
 
 function renderWishlist() {
   const empty = !STATE.wishlist.length;
+  if (!empty && STATE.wishlist.length === 0) {
+    renderWishlistSkeleton();
+    return;
+  }
   $('wishlist-empty').classList.toggle('hidden', !empty);
   $('wishlist-grid').innerHTML = STATE.wishlist
     .map((w) => {
@@ -1421,6 +1482,7 @@ document.addEventListener('change', async (e) => {
 });
 
 $('login-form')?.addEventListener('submit', handleLogin);
+$('reset-password-form')?.addEventListener('submit', handleResetPassword);
 $('register-form')?.addEventListener('submit', handleRegister);
 $$('.role-tab').forEach((tab) => {
   tab.addEventListener('click', () => {
@@ -1609,9 +1671,15 @@ async function boot() {
         STATE.profile = profile;
         await loadUserData();
         await loadHostels();
-        if (profile.role === 'admin') navigate('admin');
-        else if (profile.role === 'vendor') navigate('vendor-dashboard');
-        else navigate('home');
+        if (window.location.hash.includes('access_token')) {
+          navigate('reset-password');
+        } else if (profile.role === 'admin') {
+          navigate('admin');
+        } else if (profile.role === 'vendor') {
+          navigate('vendor-dashboard');
+        } else {
+          navigate('home');
+        }
       } else {
         await sb.auth.signOut();
         navigate('auth');
