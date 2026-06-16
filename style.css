@@ -4,11 +4,11 @@
   --gold-glow: rgba(6, 40, 99, 0.375);
   --button-glow: rgba(225, 195, 26, 0.905);
   --red: #871a14;
-  --red-dark: #6d1818;
+  --red-dark: #741b1b;
   --red-glow: rgba(255, 59, 48, 0.3);
   --dark: #05050a;
-  --surface: rgba(26, 26, 46, 0.7);
-  --surface2: rgba(22, 33, 62, 0.8);
+  --surface: rgba(24, 24, 45, 0.955);
+  --surface2: rgba(22, 33, 62, 0.903);
   --text: #f5f5f7;
   --muted: #a1a1aa;
   --success: #34c759;
@@ -27,15 +27,15 @@
 
 [data-theme="light"] {
   --dark: #c6cfd8;
-  --surface: rgba(226, 224, 235, 0.8);
-  --surface2: rgba(209, 209, 220, 0.9);
+  --surface: rgba(226, 224, 235, 0.927);
+  --surface2: rgba(209, 209, 220, 0.97);
   --text: #1a1a1a;
   --muted: #666;
   --border: rgba(0, 0, 0, 0.1);
   --shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
   --overlay-bg: rgba(248, 249, 250, 0.7);
   --hero-deep: rgba(230, 230, 235, 0.7);
-  ---bg: rgba(255, 255, 255, 0.8);
+  --header-bg: rgba(255, 255, 255, 0.8);
   --card-hover-bg: rgba(195, 200, 212, 0.9);
   --btn-hover-bg: rgba(43, 42, 51, 0.05);
 }
@@ -50,7 +50,19 @@
 
 body {
   font-family: "DM Sans", system-ui, sans-serif;
-  background: var(--dark);
+  background:
+    fixed
+      radial-gradient(
+        circle at 20% 20%,
+        rgba(59, 61, 180, 0.21) 0%,
+        transparent 50%
+      ),
+    radial-gradient(
+      circle at 80% 80%,
+      rgba(111, 130, 216, 0.544) 0%,
+      transparent 50%
+    ),
+    radial-gradient(circle at 50% 50%, var(--hero-deep) 0%, var(--dark) 100%);
   background-size: cover;
   background-position: center;
   background-attachment: fixed;
@@ -68,7 +80,23 @@ body::before {
   content: "";
   position: fixed;
   inset: 0;
-  background: var(--overlay-bg);
+  background:
+    fixed
+      radial-gradient(
+        circle at 20% 20%,
+        rgba(59, 61, 180, 0.21) 0%,
+        transparent 50%
+      ),
+    radial-gradient(
+      circle at 80% 80%,
+      rgba(111, 130, 216, 0.544) 0%,
+      transparent 50%
+    ),
+    radial-gradient(circle at 50% 50%, var(--hero-deep) 0%, var(--dark) 100%);
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+  background-size: cover;
+  background-position: center;
   pointer-events: none;
   z-index: 0;
 }
@@ -237,33 +265,12 @@ button:disabled {
   }
 }
 
-#announcement-bar {
-  background: linear-gradient(90deg, var(--red-dark), var(--red));
-  text-align: center;
-  padding: 0.6rem 2.5rem 0.6rem 1rem;
-  font-size: 0.9rem;
-  position: relative;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
-}
-
-#announcement-bar .close-ann {
-  position: absolute;
-  right: 0.75rem;
-  top: 50%;
-  transform: translateY(-50%);
-  background: none;
-  border: none;
-  color: #fff;
-  font-size: 1.2rem;
-}
-
 header {
   background: var(--header-bg);
   backdrop-filter: blur(20px);
   border-bottom: 1px solid var(--border);
   position: fixed;
   top: 0;
-  buttom: 50px;
   width: 100%;
   z-index: 1000;
   transition: var(--transition-smooth);
@@ -338,7 +345,7 @@ nav button.nav-link:hover {
 }
 
 .user-pill {
-  background: linear-gradient(135deg, var(--gold), #b8860b);
+  background: linear-gradient(135deg, #7e5205, #d39b0d);
   color: #05050a;
   font-style: italic;
   font-weight: 600;
@@ -539,9 +546,8 @@ nav button.nav-link:hover {
 
 /* Hero */
 .hero {
-  position: sticky;
+  position: relative;
   margin-top: 80px;
-  margin-buttom: 40px;
   min-height: 450px;
   display: flex;
   align-items: center;
@@ -554,19 +560,8 @@ nav button.nav-link:hover {
   position: absolute;
   inset: 0;
   z-index: -1;
-  background:
-    radial-gradient(
-      circle at 20% 20%,
-      rgba(59, 61, 180, 0.21) 0%,
-      transparent 50%
-    ),
-    radial-gradient(
-      circle at 80% 80%,
-      rgba(111, 130, 216, 0.544) 0%,
-      transparent 50%
-    ),
-    radial-gradient(circle at 50% 50%, var(--hero-deep) 0%, var(--dark) 100%);
-  background-size: 200% 200%;
+  background: url("homescreen_background.jpg");
+  background-size: 110% 100%;
   animation: mesh-gradient 12s ease-in-out infinite alternate;
 }
 @keyframes mesh-gradient {
@@ -594,12 +589,13 @@ nav button.nav-link:hover {
   filter: drop-shadow(0 2px 10px rgba(0, 0, 0, 0.3));
 }
 .hero p {
-  color: var(--muted);
+  color: var(--black);
   margin-bottom: 2rem;
   max-width: 560px;
   margin-left: auto;
   margin-right: auto;
   font-size: 1.1rem;
+  font-weight: 550;
 }
 .hero-ctas {
   display: flex;
@@ -612,16 +608,31 @@ nav button.nav-link:hover {
   font-size: 1rem;
 }
 
-pro.section-title {
-  font-size: 1.75rem;
-  margin: 3rem 0 1.5rem;
-  text-align: center;
+.section-title {
+  display: table;
+  margin: 4rem auto 2rem;
+  padding: 0.5rem 2.5rem;
+  font-size: 1.5rem;
   font-weight: 700;
+  color: var(--text);
+  background: var(--surface);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--border);
+  border-bottom: 3px solid var(--surface2);
+  border-radius: 999px;
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+  transition: var(--transition-smooth);
+}
+
+.section-title:hover {
+  border-color: var(--surface2);
+  transform: translateY(-3px);
 }
 .grid-4 {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 1.5rem;
+  gap: 2rem;
+  margin-bottom: 3rem;
 }
 .grid-3 {
   display: grid;
@@ -630,8 +641,6 @@ pro.section-title {
 }
 
 .category-card {
-  margin-top: 2px;
-  margin-buttom: 2px;
   border-radius: var(--radius);
   overflow: hidden;
   background: var(--surface2);
@@ -663,8 +672,6 @@ pro.section-title {
 }
 
 .product-card {
-  margin-top: 2px;
-  margin-buttom: 2px;
   background: var(--surface2);
   border-radius: var(--radius);
   overflow: hidden;
@@ -929,7 +936,7 @@ pro.section-title {
   background: var(--surface2);
   border-radius: var(--radius);
   overflow: hidden;
-  border: 1px solid var(--surface);
+  border: 1px solid var(--surface2);
   transition: var(--transition-smooth);
   position: relative;
 }
@@ -1019,7 +1026,7 @@ pro.section-title {
     grid-template-columns: 1fr;
   }
   .admin-sidebar {
-    position: relative;
+    position: relative, fixed;
     height: auto !important;
   }
 }
@@ -1038,16 +1045,16 @@ pro.section-title {
   text-align: left;
   margin-bottom: 0.5rem;
   background: none;
-  border: none;
-  color: var(--muted);
+  border: default;
+  color: var(--text);
   padding: 0.75rem 1rem;
   border-radius: 8px;
   transition: var(--transition-smooth);
 }
 .admin-sidebar button.active {
-  background: rgba(252, 194, 0, 0.1);
+  background: rgba(4, 3, 31, 0.797);
   color: var(--gold);
-  border: 1px solid rgba(252, 194, 0, 0.3);
+  border: 1px solid rgba(9, 5, 50, 0.3);
 }
 .admin-content {
   padding: 2rem;
@@ -1121,6 +1128,7 @@ pro.section-title {
 footer {
   background: var(--surface2);
   border-top: 1px solid var(--border);
+  position: none;
   padding: 3rem 3%;
   margin-top: 4rem;
   text-align: center;
