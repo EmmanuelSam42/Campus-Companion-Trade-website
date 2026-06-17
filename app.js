@@ -184,6 +184,7 @@ async function navigate(page, opts = {}) {
 function renderHeader() {
   const nav = $('main-nav');
   const mNav = $('mobile-nav');
+  const greet = $('user-greeting');
   const p = STATE.profile;
   const guest = !p;
 
