@@ -237,7 +237,10 @@ function renderHeader() {
       <button type="button" id="theme-toggle" class="btn-icon" title="Toggle Theme">🌓</button>
     `;
   }
-  if (mNav) mNav.innerHTML = generateNavHtml(links);
+  if (mNav) mNav.innerHTML = `
+    ${generateNavHtml(links)}
+    <button type="button" id="theme-toggle-mobile" class="btn-icon" title="Toggle Theme">🌓</button>
+  `;
 
   if (p) {
     greet.classList.remove('hidden');
@@ -263,6 +266,8 @@ async function loadSettings() {
   $('footer-tagline').textContent = STATE.settings.tagline || "Students' Ultimate Helping Hand";
   if (STATE.settings.logo_url) {
     $$('#header-logo, footer img').forEach((img) => { img.src = STATE.settings.logo_url; });
+    const favicon = document.querySelector('link[rel="icon"]');
+    if (favicon) favicon.href = STATE.settings.logo_url;
   }
   const ann = STATE.settings.announcement_banner;
   if (ann && !sessionStorage.getItem('ann-dismissed')) {
@@ -685,6 +690,20 @@ async function renderDetail(id) {
   if (!id) return;
   const p = STATE.products.find((x) => x.id === id);
   if (!p) { $('detail-content').innerHTML = '<p>Product not found.</p>'; return; }
+
+  $('detail-content').innerHTML = `
+    <div class="detail-skeleton">
+      <div class="skeleton img-skel"></div>
+      <div class="text-skel">
+        <div class="skeleton line short"></div>
+        <div class="skeleton line med"></div>
+        <div class="skeleton line long"></div>
+        <div class="skeleton line med"></div>
+        <div class="skeleton line short"></div>
+        <div class="skeleton line med" style="margin-top:1rem"></div>
+        <div class="skeleton line short" style="width:100px; height:2rem"></div>
+      </div>
+    </div>`;
 
   const { data: revs } = await sb.from('reviews').select('*').eq('product_id', id).order('created_at', { ascending: false });
   const canReview = await customerPurchasedProduct(id);
@@ -1232,7 +1251,7 @@ async function renderAdminDashboard() {
       <div class="form-group"><label>Type</label><select name="type"><option value="product">Product</option><option value="service">Service</option></select></div>
       <div class="form-group"><label>Price</label><input name="price" type="number" step="0.01" required /></div>
       <div class="form-group"><label>Description</label><textarea name="description"></textarea></div>
-      <div class="form-group"><label>Image URL</label><input name="image_url" /></div>
+      <div class="form-group"><label>Image</label><input type="file" name="image" accept="image/*" /></div>
       <label><input type="checkbox" name="featured" /> Featured</label>
       <button type="submit" class="btn-primary" data-label="Add Product">Add Product</button>
     </form>
@@ -1616,7 +1635,18 @@ document.addEventListener('submit', async (e) => {
   }
   if (e.target.id === 'admin-product-form') {
     e.preventDefault();
+    const btn = e.target.querySelector('[type=submit]');
+    setLoading(btn, true);
     const fd = new FormData(e.target);
+    let image_url = '';
+    const file = fd.get('image');
+    if (file?.size) {
+      try {
+        image_url = await uploadFile('products', `admin-${Date.now()}-${file.name}`, file);
+      } catch (err) {
+        toast('warning', 'Image upload failed; continuing without image.');
+      }
+    }
     const vid = fd.get('vendor_id');
     const vendor = STATE.profiles.find((p) => p.id === vid);
     await sb.from('products').insert({
@@ -1625,7 +1655,7 @@ document.addEventListener('submit', async (e) => {
       type: fd.get('type'),
       price: Number(fd.get('price')),
       description: fd.get('description'),
-      image_url: fd.get('image_url'),
+      image_url: image_url || undefined,
       vendor_id: vid || null,
       vendor_name: vendor ? vendor.business_name || vendor.full_name : 'Campus Companion',
       featured: fd.get('featured') === 'on',
@@ -1634,6 +1664,7 @@ document.addEventListener('submit', async (e) => {
     await loadProducts();
     toast('success', 'Product added');
     e.target.reset();
+    setLoading(btn, false);
   }
   if (e.target.id === 'admin-settings-form') {
     e.preventDefault();
