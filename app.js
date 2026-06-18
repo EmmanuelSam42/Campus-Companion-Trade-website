@@ -3,31 +3,6 @@ const SUPABASE_URL = 'https://dhidvacvupjihqnzwdik.supabase.co';
 const SUPABASE_ANON_KEY =
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRoaWR2YWN2dXBqaWhxbnp3ZGlrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgwNzY1ODcsImV4cCI6MjA5MzY1MjU4N30.190oSwDZuLEfpjkvVqG7tL4dG9iHvxBU2YHk-Zg_z9Y';
 
-//annonymous login
-import { createClient } from '@supabase/supabase-js'
-
-const supabase = createClient('https://dhidvacvupjihqnzwdik.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRoaWR2YWN2dXBqaWhxbnp3ZGlrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgwNzY1ODcsImV4cCI6MjA5MzY1MjU4N30.190oSwDZuLEfpjkvVqG7tL4dG9iHvxBU2YHk-Zg_z9Y')
-
-// ---cut---
-const { data: updateEmailData, error: updateEmailError } = await supabase.auth.updateUser({
-  email: 'valid.email@supabase.io',
-})
-
-// verify the user's email by clicking on the email change link
-// or entering the 6-digit OTP sent to the email address
-
-// once the user has been verified, update the password
-const { data: updatePasswordData, error: updatePasswordError } = await supabase.auth.updateUser({
-  password: 'password',
-})
-
-import { createClient } from '@supabase/supabase-js'
-
-const supabase = createClient('https://dhidvacvupjihqnzwdik.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRoaWR2YWN2dXBqaWhxbnp3ZGlrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgwNzY1ODcsImV4cCI6MjA5MzY1MjU4N30.190oSwDZuLEfpjkvVqG7tL4dG9iHvxBU2YHk-Zg_z9Y')
-
-// ---cut---
-const { data, error } = await supabase.auth.linkIdentity({ provider: 'google' })
-
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const DELIVERY_FEE = 5;
 const TIME_SLOTS = ['9:00 AM', '10:00 AM', '11:00 AM', '12:00 PM', '1:00 PM', '2:00 PM', '3:00 PM', '4:00 PM', '5:00 PM'];
