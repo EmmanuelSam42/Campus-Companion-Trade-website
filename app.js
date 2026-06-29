@@ -3,6 +3,9 @@ const SUPABASE_URL = 'https://dhidvacvupjihqnzwdik.supabase.co';
 const SUPABASE_ANON_KEY =
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRoaWR2YWN2dXBqaWhxbnp3ZGlrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgwNzY1ODcsImV4cCI6MjA5MzY1MjU4N30.190oSwDZuLEfpjkvVqG7tL4dG9iHvxBU2YHk-Zg_z9Y';
 
+/** Paystack public key (pk_test_… or pk_live_…). Leave empty to skip online payment. */
+const PAYSTACK_PUBLIC_KEY = 'pk_test_430a831fa666dc814f8a3ef68eae1de53458c75a';
+
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const DELIVERY_FEE = 5;
 const TIME_SLOTS = ['9:00 AM', '10:00 AM', '11:00 AM', '12:00 PM', '1:00 PM', '2:00 PM', '3:00 PM', '4:00 PM', '5:00 PM'];
@@ -26,6 +29,10 @@ const STATE = {
   adminPanel: 'overview',
   vendorPanel: 'overview',
   confirmCallback: null,
+  searchQuery: '',
+  searchTab: 'all',
+  notifications: [],
+  realtimeChannel: null,
 };
 
 function initTheme() {
@@ -117,6 +124,11 @@ function isLoggedIn() {
   return !!STATE.profile;
 }
 
+function isPasswordRecoveryFlow() {
+  const hash = window.location.hash;
+  return hash.includes('type=recovery') || hash.includes('access_token');
+}
+
 function verifiedBadge() {
   return '<span class="verified-badge">✓ Verified</span>';
 }
@@ -166,6 +178,7 @@ async function navigate(page, opts = {}) {
 
   switch (page) {
     case 'home': renderHome(); break;
+    case 'search': renderSearchResults(); break;
     case 'products': renderProducts(); break;
     case 'detail': renderDetail(STATE.detailId); break;
     case 'hostels': renderHostels(); break;
@@ -242,6 +255,13 @@ function renderHeader() {
     <button type="button" id="theme-toggle-mobile" class="btn-icon" title="Toggle Theme">🌓</button>
   `;
 
+  const actions = $('header-actions');
+  if (actions) actions.classList.toggle('hidden', guest);
+  updateNotificationBadge();
+
+  const gs = $('global-search');
+  if (gs && STATE.searchQuery && gs.value !== STATE.searchQuery) gs.value = STATE.searchQuery;
+
   if (p) {
     greet.classList.remove('hidden');
     const vb = p.role === 'vendor' && p.verified ? verifiedBadge() : '';
@@ -256,6 +276,470 @@ function escapeHtml(s) {
   const d = document.createElement('div');
   d.textContent = s;
   return d.innerHTML;
+}
+
+function showInputError(input, message) {
+  // Clear any existing error
+  clearInputError(input);
+
+  // Create error element
+  const errorDiv = document.createElement('div');
+  errorDiv.className = 'input-error';
+  errorDiv.textContent = message;
+
+  // Insert after input
+  input.parentNode.appendChild(errorDiv);
+
+  // Add error class to input for styling if needed
+  input.classList.add('input-error');
+}
+
+function clearInputError(input) {
+  // Remove error class from input
+  input.classList.remove('input-error');
+
+  // Remove any existing error message
+  const parent = input.parentNode;
+  const existingError = parent.querySelector('.input-error');
+  if (existingError) {
+    parent.removeChild(existingError);
+  }
+}
+
+// ─── Search ────────────────────────────────────────────────────────────────────
+function normalizeSearchText(s) {
+  return (s || '').toLowerCase().trim();
+}
+
+function productMatchesQuery(p, q) {
+  if (!q) return true;
+  const haystack = [
+    p.name,
+    p.description,
+    p.category,
+    p.vendor_name,
+    p.type,
+  ].map(normalizeSearchText).join(' ');
+  return haystack.includes(q);
+}
+
+function hostelMatchesQuery(h, q) {
+  if (!q) return true;
+  const amenities = Array.isArray(h.amenities) ? h.amenities.join(' ') : '';
+  const haystack = [
+    h.title,
+    h.location,
+    h.university,
+    h.type,
+    h.landlord_name,
+    h.rules,
+    amenities,
+  ].map(normalizeSearchText).join(' ');
+  return haystack.includes(q);
+}
+
+function getSearchQueryFromInputs() {
+  return normalizeSearchText(
+    $('global-search')?.value ||
+    $('filter-search')?.value ||
+    $('hostel-search-filter')?.value ||
+    STATE.searchQuery
+  );
+}
+
+function syncSearchInputs(q) {
+  STATE.searchQuery = q;
+  const gs = $('global-search');
+  const fs = $('filter-search');
+  const hs = $('hostel-search-filter');
+  if (gs && gs.value !== q) gs.value = q;
+  if (fs && fs.value !== q) fs.value = q;
+  if (hs && hs.value !== q) hs.value = q;
+}
+
+function searchProducts(q) {
+  return STATE.products.filter((p) => productMatchesQuery(p, q));
+}
+
+function searchHostels(q) {
+  return STATE.hostels.filter((h) => hostelMatchesQuery(h, q));
+}
+
+function renderGlobalSearchDropdown() {
+  const panel = $('global-search-results');
+  if (!panel) return;
+  const q = normalizeSearchText($('global-search')?.value);
+  if (!q || q.length < 2) {
+    panel.classList.add('hidden');
+    panel.innerHTML = '';
+    return;
+  }
+
+  const products = searchProducts(q).slice(0, 4);
+  const hostels = searchHostels(q).slice(0, 4);
+  if (!products.length && !hostels.length) {
+    panel.innerHTML = '<p class="empty-state" style="padding:1rem">No results</p>';
+    panel.classList.remove('hidden');
+    return;
+  }
+
+  let html = '';
+  if (products.length) {
+    html += '<div class="search-section">Products</div>';
+    html += products.map((p) => `
+      <button type="button" class="global-search-item" data-action="search-pick-product" data-id="${p.id}">
+        ${escapeHtml(p.name)}
+        <small>${escapeHtml(p.category)} · ${formatCurrency(p.price)}</small>
+      </button>`).join('');
+  }
+  if (hostels.length) {
+    html += '<div class="search-section">Hostels</div>';
+    html += hostels.map((h) => `
+      <button type="button" class="global-search-item" data-action="search-pick-hostel" data-id="${h.id}">
+        ${escapeHtml(h.title)}
+        <small>${escapeHtml(h.location || h.university || '')} · ${formatCurrency(h.price_per_month)}/mo</small>
+      </button>`).join('');
+  }
+  html += `<div class="global-search-footer"><button type="button" class="btn-outline" style="width:100%" data-action="search-view-all">View all results</button></div>`;
+  panel.innerHTML = html;
+  panel.classList.remove('hidden');
+}
+
+function hideGlobalSearchDropdown() {
+  $('global-search-results')?.classList.add('hidden');
+}
+
+function renderSearchResults() {
+  const q = STATE.searchQuery || getSearchQueryFromInputs();
+  syncSearchInputs(q);
+  $('search-query-label').textContent = q ? `Showing results for “${q}”` : 'Enter a search term in the header.';
+
+  const tab = STATE.searchTab || 'all';
+  $$('.search-tab').forEach((t) => t.classList.toggle('active', t.dataset.searchTab === tab));
+
+  const products = searchProducts(q);
+  const hostels = searchHostels(q);
+  const showProducts = tab === 'all' || tab === 'products';
+  const showHostels = tab === 'all' || tab === 'hostels';
+
+  $('search-results-products').classList.toggle('hidden', !showProducts);
+  $('search-results-hostels').classList.toggle('hidden', !showHostels);
+
+  if (showProducts) {
+    $('search-products-grid').innerHTML = products.length
+      ? products.map((p) => productCardHtml(p)).join('')
+      : '';
+    $('search-products-empty').classList.toggle('hidden', products.length > 0);
+  }
+  if (showHostels) {
+    $('search-hostels-grid').innerHTML = hostels.length
+      ? hostels.map((h) => hostelCardHtml(h)).join('')
+      : '';
+    $('search-hostels-empty').classList.toggle('hidden', hostels.length > 0);
+  }
+}
+
+function openSearchPage(q) {
+  syncSearchInputs(q);
+  hideGlobalSearchDropdown();
+  navigate('search');
+}
+
+// ─── Notifications ───────────────────────────────────────────────────────────
+function notificationsStorageKey() {
+  return STATE.profile ? `cct-notifications-${STATE.profile.id}` : null;
+}
+
+function loadNotifications() {
+  const key = notificationsStorageKey();
+  if (!key) {
+    STATE.notifications = [];
+    return;
+  }
+  try {
+    STATE.notifications = JSON.parse(localStorage.getItem(key) || '[]');
+  } catch {
+    STATE.notifications = [];
+  }
+}
+
+function saveNotifications() {
+  const key = notificationsStorageKey();
+  if (key) localStorage.setItem(key, JSON.stringify(STATE.notifications.slice(0, 50)));
+}
+
+function unreadNotificationCount() {
+  return STATE.notifications.filter((n) => !n.read).length;
+}
+
+function updateNotificationBadge() {
+  const badge = $('notifications-badge');
+  if (!badge) return;
+  const count = unreadNotificationCount();
+  badge.textContent = count > 99 ? '99+' : String(count);
+  badge.classList.toggle('hidden', !count || !STATE.profile);
+}
+
+function pushNotification({ type, title, message, link }) {
+  if (!STATE.profile) return;
+  const n = {
+    id: crypto.randomUUID(),
+    type: type || 'info',
+    title,
+    message: message || '',
+    link: link || null,
+    read: false,
+    createdAt: new Date().toISOString(),
+  };
+  STATE.notifications.unshift(n);
+  if (STATE.notifications.length > 50) STATE.notifications.length = 50;
+  saveNotifications();
+  toast(type === 'error' ? 'error' : type === 'success' ? 'success' : 'warning', title);
+  updateNotificationBadge();
+  if (!$('notifications-panel')?.classList.contains('hidden')) renderNotificationsPanel();
+}
+
+function markAllNotificationsRead() {
+  STATE.notifications.forEach((n) => { n.read = true; });
+  saveNotifications();
+  updateNotificationBadge();
+  renderNotificationsPanel();
+}
+
+function markNotificationRead(id) {
+  const n = STATE.notifications.find((x) => x.id === id);
+  if (n) n.read = true;
+  saveNotifications();
+  updateNotificationBadge();
+  renderNotificationsPanel();
+}
+
+function renderNotificationsPanel() {
+  const list = $('notifications-list');
+  const empty = $('notifications-empty');
+  if (!list) return;
+
+  if (!STATE.notifications.length) {
+    list.innerHTML = '';
+    empty?.classList.remove('hidden');
+    return;
+  }
+  empty?.classList.add('hidden');
+  list.innerHTML = STATE.notifications.map((n) => `
+    <li class="notification-item ${n.read ? '' : 'unread'}" data-notification-id="${n.id}" data-nav-link="${n.link || ''}">
+      <strong>${escapeHtml(n.title)}</strong>
+      ${n.message ? `<p style="font-size:.85rem;margin-top:.25rem">${escapeHtml(n.message)}</p>` : ''}
+      <time>${formatDate(n.createdAt)}</time>
+    </li>`).join('');
+}
+
+function toggleNotificationsPanel(force) {
+  const panel = $('notifications-panel');
+  if (!panel) return;
+  const open = force === true ? true : force === false ? false : panel.classList.contains('hidden');
+  if (open) {
+    renderNotificationsPanel();
+    panel.classList.remove('hidden');
+  } else {
+    panel.classList.add('hidden');
+  }
+}
+
+// ─── Realtime ──────────────────────────────────────────────────────────────────
+function teardownRealtime() {
+  if (STATE.realtimeChannel) {
+    sb.removeChannel(STATE.realtimeChannel);
+    STATE.realtimeChannel = null;
+  }
+}
+
+function appointmentIsRelevant(record) {
+  if (!STATE.profile || !record) return false;
+  const role = STATE.profile.role;
+  if (role === 'customer') return record.user_id === STATE.profile.id;
+  if (role === 'admin') return true;
+  if (role === 'vendor') {
+    return record.vendor_name === STATE.profile.business_name ||
+      STATE.products.some((p) => p.id === record.product_id && p.vendor_id === STATE.profile.id);
+  }
+  return false;
+}
+
+function orderIsRelevant(record) {
+  if (!STATE.profile || !record) return false;
+  const role = STATE.profile.role;
+  if (role === 'customer') return record.user_id === STATE.profile.id;
+  if (role === 'admin') return true;
+  if (role === 'vendor') {
+    const items = record.items || [];
+    return items.some((i) =>
+      STATE.products.some((p) => p.id === i.product_id && p.vendor_id === STATE.profile.id)
+    );
+  }
+  return false;
+}
+
+async function handleOrderRealtime(payload) {
+  const row = payload.new || payload.old;
+  if (!orderIsRelevant(row)) return;
+
+  await loadOrders();
+  if (STATE.currentPage === 'orders') renderOrders();
+  if (STATE.profile.role === 'admin' || STATE.profile.role === 'vendor') {
+    if (STATE.currentPage === 'admin') renderAdminDashboard();
+    if (STATE.currentPage === 'vendor-dashboard') renderVendorDashboard();
+  }
+
+  if (payload.eventType === 'INSERT') {
+    pushNotification({
+      type: 'success',
+      title: 'New order',
+      message: `#${row.order_number} — ${formatCurrency(row.total)}`,
+      link: 'orders',
+    });
+  } else if (payload.eventType === 'UPDATE' && payload.new?.status !== payload.old?.status) {
+    pushNotification({
+      type: 'info',
+      title: 'Order updated',
+      message: `#${row.order_number} is now ${payload.new.status}`,
+      link: 'orders',
+    });
+  }
+}
+
+async function handleAppointmentRealtime(payload) {
+  const row = payload.new || payload.old;
+  if (!appointmentIsRelevant(row)) return;
+
+  if (STATE.currentPage === 'vendor-dashboard') renderVendorDashboard();
+  if (STATE.currentPage === 'admin') renderAdminDashboard();
+
+  if (payload.eventType === 'INSERT') {
+    pushNotification({
+      type: 'info',
+      title: 'New appointment',
+      message: row.service_name || 'Viewing request',
+      link: STATE.profile.role === 'customer' ? 'profile' : 'vendor-dashboard',
+    });
+  } else if (payload.eventType === 'UPDATE' && payload.new?.status !== payload.old?.status) {
+    pushNotification({
+      type: 'success',
+      title: 'Appointment updated',
+      message: `${row.service_name || 'Appointment'} — ${payload.new.status}`,
+      link: STATE.profile.role === 'customer' ? 'profile' : 'vendor-dashboard',
+    });
+  }
+}
+
+async function handleProfileRealtime(payload) {
+  const row = payload.new;
+  if (!row || row.id !== STATE.profile?.id) return;
+
+  if (payload.eventType === 'UPDATE' && payload.old?.status !== row.status) {
+    if (row.status === 'approved') {
+      pushNotification({
+        type: 'success',
+        title: 'Account approved',
+        message: 'You can now use Campus Companion Trade.',
+        link: row.role === 'admin' ? 'admin' : row.role === 'vendor' ? 'vendor-dashboard' : 'home',
+      });
+      toast('success', 'Your account has been approved!');
+    } else if (row.status === 'rejected') {
+      pushNotification({ type: 'error', title: 'Account rejected', message: 'Contact support for help.' });
+    }
+  }
+  STATE.profile = { ...STATE.profile, ...row };
+}
+
+async function handleNewUserRealtime(payload) {
+  if (STATE.profile?.role !== 'admin' || payload.eventType !== 'INSERT') return;
+  const row = payload.new;
+  if (row.status !== 'pending') return;
+  pushNotification({
+    type: 'warning',
+    title: 'New registration',
+    message: `${row.full_name || row.email} (${row.role})`,
+    link: 'admin',
+  });
+  if (STATE.currentPage === 'admin') renderAdminDashboard();
+}
+
+function setupRealtime() {
+  teardownRealtime();
+  if (!STATE.profile) return;
+
+  const uid = STATE.profile.id;
+  const role = STATE.profile.role;
+  const channel = sb.channel(`cct-${uid}`);
+
+  if (role === 'customer') {
+    channel.on('postgres_changes', { event: '*', schema: 'public', table: 'orders', filter: `user_id=eq.${uid}` }, handleOrderRealtime);
+    channel.on('postgres_changes', { event: '*', schema: 'public', table: 'appointments', filter: `user_id=eq.${uid}` }, handleAppointmentRealtime);
+  } else if (role === 'admin') {
+    channel.on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, handleOrderRealtime);
+    channel.on('postgres_changes', { event: '*', schema: 'public', table: 'appointments' }, handleAppointmentRealtime);
+    channel.on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'profiles' }, handleNewUserRealtime);
+  } else if (role === 'vendor') {
+    channel.on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, handleOrderRealtime);
+    channel.on('postgres_changes', { event: '*', schema: 'public', table: 'appointments' }, handleAppointmentRealtime);
+  }
+
+  channel.on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'profiles', filter: `id=eq.${uid}` }, handleProfileRealtime);
+  channel.subscribe();
+  STATE.realtimeChannel = channel;
+}
+
+function initUserSession() {
+  loadNotifications();
+  setupRealtime();
+  renderHeader();
+}
+
+// ─── Paystack ──────────────────────────────────────────────────────────────────
+function paystackEnabled() {
+  return Boolean(PAYSTACK_PUBLIC_KEY && window.PaystackPop);
+}
+
+function updateCheckoutPaymentUi() {
+  const payment = document.querySelector('input[name=payment]:checked')?.value || 'Mobile Money';
+  const btn = $('checkout-submit-btn');
+  const hint = $('checkout-pay-hint');
+  const isOnline = payment === 'Mobile Money' || payment === 'Card';
+
+  if (btn) {
+    btn.textContent = isOnline && paystackEnabled() ? 'Pay & Place Order' : 'Place Order';
+    btn.dataset.label = btn.textContent;
+  }
+  if (hint) {
+    if (!paystackEnabled()) {
+      hint.textContent = 'Set PAYSTACK_PUBLIC_KEY in app.js to enable online MoMo/Card payments.';
+    } else if (isOnline) {
+      hint.textContent = 'You will complete payment securely via Paystack before your order is placed.';
+    } else {
+      hint.textContent = 'Pay with cash when your order is delivered.';
+    }
+  }
+}
+
+function initiatePaystackPayment({ email, amount, orderNumber, paymentMethod }) {
+  return new Promise((resolve, reject) => {
+    if (!paystackEnabled()) {
+      reject(new Error('Paystack is not configured'));
+      return;
+    }
+    const handler = PaystackPop.setup({
+      key: PAYSTACK_PUBLIC_KEY,
+      email,
+      amount: Math.round(Number(amount) * 100),
+      currency: 'GHS',
+      ref: `${orderNumber}-${Date.now()}`,
+      channels: paymentMethod === 'Card' ? ['card'] : ['mobile_money', 'card'],
+      metadata: { order_number: orderNumber, custom_fields: [{ display_name: 'Order', variable_name: 'order_number', value: orderNumber }] },
+      callback(response) { resolve(response.reference); },
+      onClose() { reject(new Error('Payment cancelled')); },
+    });
+    handler.openIframe();
+  });
 }
 
 // ─── Data loading ────────────────────────────────────────────────────────────
@@ -415,6 +899,7 @@ async function handleLogin(e) {
   STATE.user = authData.user;
   STATE.profile = profile;
   await loadUserData();
+  initUserSession();
   toast('success', `Welcome, ${profile.full_name}!`);
 
   if (profile.role === 'admin') navigate('admin');
@@ -482,11 +967,15 @@ async function handleRegister(e) {
 }
 
 async function logout() {
+  teardownRealtime();
+  toggleNotificationsPanel(false);
   await sb.auth.signOut();
   STATE.user = null;
   STATE.profile = null;
   STATE.cart = [];
   STATE.wishlist = [];
+  STATE.notifications = [];
+  updateNotificationBadge();
   toast('success', 'Logged out.');
   navigate('auth');
 }
@@ -580,7 +1069,7 @@ function renderHome() {
 }
 
 function filterProductsList() {
-  const q = ($('filter-search')?.value || '').toLowerCase();
+  const q = normalizeSearchText($('filter-search')?.value || STATE.searchQuery);
   const cat = $('filter-category')?.value || '';
   const type = $('filter-type')?.value || 'all';
   const sort = $('filter-sort')?.value || 'default';
@@ -588,7 +1077,7 @@ function filterProductsList() {
   let list = STATE.products.filter((p) => {
     if (type !== 'all' && p.type !== type) return false;
     if (cat && p.category !== cat) return false;
-    if (q && !p.name.toLowerCase().includes(q) && !(p.description || '').toLowerCase().includes(q)) return false;
+    if (!productMatchesQuery(p, q)) return false;
     return true;
   });
 
@@ -766,12 +1255,14 @@ function filterHostels() {
   const type = $('hostel-type-filter')?.value || '';
   const maxP = Number($('hostel-price-max')?.value || 5000);
   const uni = ($('hostel-uni-filter')?.value || '').toLowerCase();
+  const q = normalizeSearchText($('hostel-search-filter')?.value || STATE.searchQuery);
   const amenityChecks = $$('.amenity-filter:checked').map((c) => c.value);
 
   return STATE.hostels.filter((h) => {
     if (type && h.type !== type) return false;
     if (h.price_per_month > maxP) return false;
     if (uni && !(h.university || '').toLowerCase().includes(uni) && !(h.location || '').toLowerCase().includes(uni)) return false;
+    if (!hostelMatchesQuery(h, q)) return false;
     const am = h.amenities || [];
     if (amenityChecks.length && !amenityChecks.every((a) => am.includes(a))) return false;
     return true;
@@ -921,6 +1412,7 @@ function renderCheckout() {
     <div class="row"><span>Subtotal</span><span>${formatCurrency(sub)}</span></div>
     <div class="row"><span>Delivery</span><span>${formatCurrency(DELIVERY_FEE)}</span></div>
     <div class="row total"><span>Total</span><span>${formatCurrency(sub + DELIVERY_FEE)}</span></div>`;
+  updateCheckoutPaymentUi();
 }
 
 async function placeOrder(e) {
@@ -938,21 +1430,46 @@ async function placeOrder(e) {
     vendor_name: c.products.vendor_name,
   }));
   const subtotal = items.reduce((s, i) => s + i.price * i.quantity, 0);
+  const total = subtotal + DELIVERY_FEE;
   const orderNumber = 'CCT-' + Date.now().toString(36).toUpperCase();
   const payment = document.querySelector('input[name=payment]:checked')?.value || 'Mobile Money';
   const room = $('co-room').value.trim();
   const address = $('co-address').value.trim() + (room ? `, Room ${room}` : '');
+  const email = STATE.profile.email || $('co-name').value.trim();
+
+  let paymentReference = null;
+  let paymentStatus = payment === 'Cash on Delivery' ? 'cod' : 'pending';
+
+  if ((payment === 'Mobile Money' || payment === 'Card') && paystackEnabled()) {
+    try {
+      paymentReference = await initiatePaystackPayment({
+        email,
+        amount: total,
+        orderNumber,
+        paymentMethod: payment,
+      });
+      paymentStatus = 'paid';
+    } catch (err) {
+      toast('error', err.message || 'Payment failed.');
+      setLoading(btn, false);
+      return;
+    }
+  } else if ((payment === 'Mobile Money' || payment === 'Card') && !paystackEnabled()) {
+    toast('warning', 'Online payment not configured — order saved without Paystack.');
+  }
 
   const { error } = await sb.from('orders').insert({
     order_number: orderNumber,
     user_id: STATE.profile.id,
     user_name: $('co-name').value.trim(),
-    user_email: STATE.profile.email,
+    user_email: email,
     items,
     subtotal,
     delivery_fee: DELIVERY_FEE,
-    total: subtotal + DELIVERY_FEE,
+    total,
     payment_method: payment,
+    payment_reference: paymentReference,
+    payment_status: paymentStatus,
     delivery_name: $('co-name').value.trim(),
     delivery_phone: $('co-phone').value.trim(),
     delivery_address: address,
@@ -968,12 +1485,14 @@ async function placeOrder(e) {
 
   await sb.from('cart_items').delete().eq('user_id', STATE.profile.id);
   await loadCart();
+  await loadOrders();
   $('checkout-form').classList.add('hidden');
   $('checkout-success').classList.remove('hidden');
   $('checkout-success').innerHTML = `
     <div class="check">✓</div>
     <h2>Order placed!</h2>
     <p class="order-number">#${orderNumber}</p>
+    ${paymentReference ? `<p style="color:var(--muted)">Payment ref: ${escapeHtml(paymentReference)}</p>` : ''}
     <p>Thank you for shopping with Campus Companion Trade.</p>
     <div class="hero-ctas" style="margin-top:1.5rem">
       <button class="btn-primary" data-nav="home">Back to Home</button>
@@ -999,7 +1518,7 @@ function renderOrders() {
         <span class="order-number">#${escapeHtml(o.order_number)}</span>
         <span class="status-pill status-${o.status}">${o.status}</span>
       </div>
-      <p>${formatDate(o.created_at)} · ${formatCurrency(o.total)} · ${escapeHtml(o.payment_method || '')}</p>
+      <p>${formatDate(o.created_at)} · ${formatCurrency(o.total)} · ${escapeHtml(o.payment_method || '')}${o.payment_reference ? ` · Ref: ${escapeHtml(o.payment_reference)}` : ''}</p>
       <p style="font-size:.9rem;color:var(--muted)">${(o.items || []).map((i) => i.name).join(', ')}</p>
       <div class="order-expand hidden" id="expand-${o.id}"></div>
     </div>`
@@ -1108,7 +1627,7 @@ async function submitAppointment(e) {
 }
 
 // ─── Vendor dashboard (condensed) ────────────────────────────────────────────
-const VENDOR_TABS = ['overview', 'products', 'add-product', 'orders', 'appointments', 'reviews', 'profile'];
+const VENDOR_TABS = ['overview', 'products', 'add-product', 'add-hostel', 'orders', 'appointments', 'reviews', 'profile'];
 
 async function renderVendorDashboard() {
   const tabs = $('vendor-tabs');
@@ -1149,6 +1668,9 @@ async function renderVendorDashboard() {
   <div class="vendor-panel ${STATE.vendorPanel === 'add-product' ? 'active' : ''}" data-vpanel="add-product">
     ${vendorProductForm()}
   </div>
+  <div class="vendor-panel ${STATE.vendorPanel === 'add-hostel' ? 'active' : ''}" data-vpanel="add-hostel">
+    ${vendorHostelForm()}
+  </div>
   <div class="vendor-panel ${STATE.vendorPanel === 'orders' ? 'active' : ''}" data-vpanel="orders">
     <div class="table-wrap"><table class="data-table"><thead><tr><th>Order</th><th>Customer</th><th>Total</th><th>Status</th><th>Date</th></tr></thead>
     <tbody>${myOrders.map(o=>`<tr><td>${o.order_number}</td><td>${escapeHtml(o.user_name||'')}</td><td>${formatCurrency(o.total)}</td><td>${o.status}</td><td>${formatDate(o.created_at)}</td></tr>`).join('')}</tbody></table></div>
@@ -1180,10 +1702,48 @@ function vendorProductForm(product = null) {
     <button type="submit" class="btn-primary" data-label="Save Product">Save Product</button>
   </form>`;
 }
+function vendorHostelForm(hostel = null) {
+  return `<form id="vendor-hostel-form" style="max-width:520px;margin-top:1rem">
+    <input type="hidden" name="id" value="${hostel?.id || ""}" />
+    <input type="hidden" name="vendor_id" value="${STATE.profile?.id || ""}" />
+    <div class="form-group"><label>Title</label><input name="title" required value="${escapeHtml(hostel?.title || "")}" /></div>
+    <div class="form-group"><label>Type</label><select name="type"><option value="Single" ${hostel?.type === "Single" ? "selected" : ""}>Single</option><option value="Double" ${hostel?.type === "Double" ? "selected" : ""}>Double</option><option value="Self-Contained" ${hostel?.type === "Self-Contained" ? "selected" : ""}>Self-Contained</option><option value="Apartment" ${hostel?.type === "Apartment" ? "selected" : ""}>Apartment</option><option value="BQ" ${hostel?.type === "BQ" ? "selected" : ""}>BQ</option></select></div>
+    <div class="form-group"><label>Price per month (GH₵)</label><input name="price_per_month" type="number" step="0.01" required value="${escapeHtml(hostel?.price_per_month || "")}" /></div>
+    <div class="form-group"><label>Location</label><input name="location" required value="${escapeHtml(hostel?.location || "")}" /></div>
+    <div class="form-group"><label>University / Area</label><input name="university" value="${escapeHtml(hostel?.university || "")}" /></div>
+    <div class="form-group"><label>Available from</label><input name="available_from" type="date" value="${hostel?.available_from || ""}" /></div>
+    <div class="form-group"><label>Units available</label><input name="units_available" type="number" min="1" value="${escapeHtml(hostel?.units_available || "")}" /></div>
+    <div class="form-group"><label>Amenities (comma-separated)</label><input name="amenities" placeholder="WiFi, Furnished, AC, Water, etc." value="${escapeHtml(hostel?.amenities || "")}" /></div>
+    <div class="form-group"><label>Landlord name</label><input name="landlord_name" value="${escapeHtml(hostel?.landlord_name || "")}" /></div>
+    <div class="form-group"><label>Landlord phone</label><input name="landlord_phone" type="tel" value="${escapeHtml(hostel?.landlord_phone || "")}" /></div>
+    <div class="form-group"><label>Rules</label><textarea name="rules" rows="3">${escapeHtml(hostel?.rules || "")}</textarea></div>
+    <div class="form-group"><label>Images</label><input type="file" name="images" multiple accept="image/*" /></div>
+    <button type="submit" class="btn-primary" data-label="Save Hostel">Save Hostel</button>
+  </form>`;
+}
 
+async function adminHostelForm(hostel = null) {
+  return `<form id="admin-hostel-form" style="max-width:520px;margin-top:1rem">
+    <input type="hidden" name="id" value="${hostel?.id || ""}" />
+    <div class="form-group"><label>Vendor ID (UUID)</label><input name="vendor_id" value="${escapeHtml(hostel?.vendor_id || "")}" /></div>
+    <div class="form-group"><label>Title</label><input name="title" required value="${escapeHtml(hostel?.title || "")}" /></div>
+    <div class="form-group"><label>Type</label><select name="type"><option value="Single" ${hostel?.type === "Single" ? "selected" : ""}>Single</option><option value="Double" ${hostel?.type === "Double" ? "selected" : ""}>Double</option><option value="Self-Contained" ${hostel?.type === "Self-Contained" ? "selected" : ""}>Self-Contained</option><option value="Apartment" ${hostel?.type === "Apartment" ? "selected" : ""}>Apartment</option><option value="BQ" ${hostel?.type === "BQ" ? "selected" : ""}>BQ</option></select></div>
+    <div class="form-group"><label>Price per month (GH₵)</label><input name="price_per_month" type="number" step="0.01" required value="${escapeHtml(hostel?.price_per_month || "")}" /></div>
+    <div class="form-group"><label>Location</label><input name="location" required value="${escapeHtml(hostel?.location || "")}" /></div>
+    <div class="form-group"><label>University / Area</label><input name="university" value="${escapeHtml(hostel?.university || "")}" /></div>
+    <div class="form-group"><label>Available from</label><input name="available_from" type="date" value="${hostel?.available_from || ""}" /></div>
+    <div class="form-group"><label>Units available</label><input name="units_available" type="number" min="1" value="${escapeHtml(hostel?.units_available || "")}" /></div>
+    <div class="form-group"><label>Amenities (comma-separated)</label><input name="amenities" placeholder="WiFi, Furnished, AC, Water, etc." value="${escapeHtml(hostel?.amenities || "")}" /></div>
+    <div class="form-group"><label>Landlord name</label><input name="landlord_name" value="${escapeHtml(hostel?.landlord_name || "")}" /></div>
+    <div class="form-group"><label>Landlord phone</label><input name="landlord_phone" type="tel" value="${escapeHtml(hostel?.landlord_phone || "")}" /></div>
+    <div class="form-group"><label>Rules</label><textarea name="rules" rows="3">${escapeHtml(hostel?.rules || "")}</textarea></div>
+    <div class="form-group"><label>Images</label><input type="file" name="images" multiple accept="image/*" /></div>
+    <button type="submit" class="btn-primary" data-label="Save Hostel">Save Hostel</button>
+  </form>`;
+}
 // ─── Admin dashboard (condensed) ─────────────────────────────────────────────
 const ADMIN_PANELS = [
-  'overview', 'users', 'products', 'add-product', 'hostels', 'orders',
+  'overview', 'users', 'products', 'add-product', 'add-hostel', 'hostels', 'orders',
   'appointments', 'reviews', 'settings', 'create-admin', 'audit',
 ];
 
@@ -1256,6 +1816,9 @@ async function renderAdminDashboard() {
       <button type="submit" class="btn-primary" data-label="Add Product">Add Product</button>
     </form>
   </div>
+  <div class="admin-panel ${STATE.adminPanel === 'add-hostel' ? 'active' : ''}" data-apanel="add-hostel">
+    ${adminHostelForm()}
+  </div>
   <div class="admin-panel ${STATE.adminPanel === 'hostels' ? 'active' : ''}" data-apanel="hostels">
     <div class="table-wrap"><table class="data-table"><thead><tr><th>Title</th><th>Type</th><th>Price/mo</th><th>Status</th><th></th></tr></thead>
     <tbody>${STATE.hostels.map(h=>`<tr><td>${escapeHtml(h.title)}</td><td>${h.type}</td><td>${formatCurrency(h.price_per_month)}</td><td>${h.status}</td>
@@ -1299,11 +1862,365 @@ async function renderAdminDashboard() {
   </div>`;
 }
 
+// Hostel form submission handlers
+async function submitVendorHostelForm(e) {
+  e.preventDefault();
+
+  // Clear previous errors
+  clearInputError($("vendor-hostel-form").querySelector('[name="title"]'));
+  clearInputError($("vendor-hostel-form").querySelector('[name="type"]'));
+  clearInputError($("vendor-hostel-form").querySelector('[name="price_per_month"]'));
+  clearInputError($("vendor-hostel-form").querySelector('[name="location"]'));
+  clearInputError($("vendor-hostel-form").querySelector('[name="university"]'));
+  clearInputError($("vendor-hostel-form").querySelector('[name="available_from"]'));
+  clearInputError($("vendor-hostel-form").querySelector('[name="units_available"]'));
+  clearInputError($("vendor-hostel-form").querySelector('[name="amenities"]'));
+  clearInputError($("vendor-hostel-form").querySelector('[name="landlord_name"]'));
+  clearInputError($("vendor-hostel-form").querySelector('[name="landlord_phone"]'));
+  clearInputError($("vendor-hostel-form").querySelector('[name="rules"]'));
+
+  const btn = e.target.querySelector("[type=submit]");
+  setLoading(btn, true);
+
+  const fd = new FormData(e.target);
+
+  // Validation
+  const title = fd.get("title").trim();
+  const type = fd.get("type");
+  const pricePerMonth = fd.get("price_per_month");
+  const location = fd.get("location").trim();
+  const university = fd.get("university").trim();
+  const availableFrom = fd.get("available_from");
+  const unitsAvailable = fd.get("units_available");
+  const amenities = fd.get("amenities").trim();
+  const landlordName = fd.get("landlord_name").trim();
+  const landlordPhone = fd.get("landlord_phone").trim();
+  const rules = fd.get("rules").trim();
+  const id = fd.get("id");
+
+  let valid = true;
+
+  if (!title) {
+    showInputError($("vendor-hostel-form").querySelector('[name="title"]'), "Title is required");
+    valid = false;
+  }
+
+  if (!type) {
+    showInputError($("vendor-hostel-form").querySelector('[name="type"]'), "Type is required");
+    valid = false;
+  }
+
+  if (!pricePerMonth) {
+    showInputError($("vendor-hostel-form").querySelector('[name="price_per_month"]'), "Price per month is required");
+    valid = false;
+  } else {
+    const price = parseFloat(pricePerMonth);
+    if (isNaN(price) || price <= 0) {
+      showInputError($("vendor-hostel-form").querySelector('[name="price_per_month"]'), "Please enter a valid price greater than 0");
+      valid = false;
+    }
+  }
+
+  if (!location) {
+    showInputError($("vendor-hostel-form").querySelector('[name="location"]'), "Location is required");
+    valid = false;
+  }
+
+  if (!availableFrom) {
+    showInputError($("vendor-hostel-form").querySelector('[name="available_from"]'), "Available from date is required");
+    valid = false;
+  }
+
+  if (!unitsAvailable) {
+    showInputError($("vendor-hostel-form").querySelector('[name="units_available"]'), "Units available is required");
+    valid = false;
+  } else {
+    const units = parseInt(unitsAvailable);
+    if (isNaN(units) || units < 1) {
+      showInputError($("vendor-hostel-form").querySelector('[name="units_available"]'), "Please enter a valid number of units (at least 1)");
+      valid = false;
+    }
+  }
+
+  if (!landlordName) {
+    showInputError($("vendor-hostel-form").querySelector('[name="landlord_name"]'), "Landlord name is required");
+    valid = false;
+  }
+
+  if (!landlordPhone) {
+    showInputError($("vendor-hostel-form").querySelector('[name="landlord_phone"]'), "Landlord phone is required");
+    valid = false;
+  } else if (!/^\d{10,15}$/.test(landlordPhone.replace(/\s+/g, ''))) {
+    showInputError($("vendor-hostel-form").querySelector('[name="landlord_phone"]'), "Please enter a valid phone number");
+    valid = false;
+  }
+
+  if (!valid) {
+    setLoading(btn, false);
+    return;
+  }
+
+  try {
+    // Handle image uploads
+    const imageFiles = fd.getAll("images");
+    let imagesJson = "[]";
+    if (imageFiles.some(file => file.size > 0)) {
+      const imagePromises = imageFiles
+        .filter(file => file.size > 0)
+        .map((file, index) => uploadFile("hostels", `${Date.now()}-${index}-${file.name}`, file));
+      const imageUrls = await Promise.all(imagePromises);
+      imagesJson = JSON.stringify(imageUrls);
+    }
+
+    // Prepare amenities as JSON array
+    let amenitiesJson = "[]";
+    if (amenities) {
+      const amenitiesArray = amenities.split(",").map(a => a.trim()).filter(a => a.length > 0);
+      amenitiesJson = JSON.stringify(amenitiesArray);
+    }
+
+    const hostelData = {
+      title: title,
+      type: type,
+      price_per_month: parseFloat(pricePerMonth),
+      location: location,
+      university: university,
+      available_from: availableFrom,
+      units_available: parseInt(unitsAvailable),
+      amenities: amenitiesJson,
+      landlord_name: landlordName,
+      landlord_phone: landlordPhone,
+      rules: rules,
+      images: imagesJson,
+      vendor_id: STATE.profile.id, // Always set to current vendor's ID
+      status: "pending" // New hostels start as pending
+    };
+
+    let result;
+    if (id) {
+      // Update existing hostel
+      result = await sb.from("hostels_listings").update(hostelData).eq("id", id);
+      await logAdmin("update_hostel", "hostel", id, title);
+    } else {
+      // Insert new hostel
+      result = await sb.from("hostels_listings").insert(hostelData);
+      await logAdmin("add_hostel", "hostel", result.data[0].id, title);
+    }
+
+    if (result.error) throw result.error;
+
+    await loadHostels();
+    toast("success", "Hostel saved successfully");
+    e.target.reset();
+
+    // Redirect to hostels page after adding a new hostel
+    if (!id) {
+      // Navigate to hostels page
+      navigate('hostels');
+    }
+  } catch (err) {
+    console.error(err);
+    toast("error", "Failed to save hostel: " + err.message);
+  } finally {
+    setLoading(btn, false);
+  }
+}
+
+async function submitAdminHostelForm(e) {
+  e.preventDefault();
+
+  // Clear previous errors
+  clearInputError($("admin-hostel-form").querySelector('[name="vendor_id"]'));
+  clearInputError($("admin-hostel-form").querySelector('[name="title"]'));
+  clearInputError($("admin-hostel-form").querySelector('[name="type"]'));
+  clearInputError($("admin-hostel-form").querySelector('[name="price_per_month"]'));
+  clearInputError($("admin-hostel-form").querySelector('[name="location"]'));
+  clearInputError($("admin-hostel-form").querySelector('[name="university"]'));
+  clearInputError($("admin-hostel-form").querySelector('[name="available_from"]'));
+  clearInputError($("admin-hostel-form").querySelector('[name="units_available"]'));
+  clearInputError($("admin-hostel-form").querySelector('[name="amenities"]'));
+  clearInputError($("admin-hostel-form").querySelector('[name="landlord_name"]'));
+  clearInputError($("admin-hostel-form").querySelector('[name="landlord_phone"]'));
+  clearInputError($("admin-hostel-form").querySelector('[name="rules"]'));
+
+  const btn = e.target.querySelector("[type=submit]");
+  setLoading(btn, true);
+
+  const fd = new FormData(e.target);
+
+  // Validation
+  const vendorId = fd.get("vendor_id").trim();
+  const title = fd.get("title").trim();
+  const type = fd.get("type");
+  const pricePerMonth = fd.get("price_per_month");
+  const location = fd.get("location").trim();
+  const university = fd.get("university").trim();
+  const availableFrom = fd.get("available_from");
+  const unitsAvailable = fd.get("units_available");
+  const amenities = fd.get("amenities").trim();
+  const landlordName = fd.get("landlord_name").trim();
+  const landlordPhone = fd.get("landlord_phone").trim();
+  const rules = fd.get("rules").trim();
+  const id = fd.get("id");
+
+  let valid = true;
+
+  if (!vendorId) {
+    showInputError($("admin-hostel-form").querySelector('[name="vendor_id"]'), "Vendor ID is required");
+    valid = false;
+  }
+
+  if (!title) {
+    showInputError($("admin-hostel-form").querySelector('[name="title"]'), "Title is required");
+    valid = false;
+  }
+
+  if (!type) {
+    showInputError($("admin-hostel-form").querySelector('[name="type"]'), "Type is required");
+    valid = false;
+  }
+
+  if (!pricePerMonth) {
+    showInputError($("admin-hostel-form").querySelector('[name="price_per_month"]'), "Price per month is required");
+    valid = false;
+  } else {
+    const price = parseFloat(pricePerMonth);
+    if (isNaN(price) || price <= 0) {
+      showInputError($("admin-hostel-form").querySelector('[name="price_per_month"]'), "Please enter a valid price greater than 0");
+      valid = false;
+    }
+  }
+
+  if (!location) {
+    showInputError($("admin-hostel-form").querySelector('[name="location"]'), "Location is required");
+    valid = false;
+  }
+
+  if (!availableFrom) {
+    showInputError($("admin-hostel-form").querySelector('[name="available_from"]'), "Available from date is required");
+    valid = false;
+  }
+
+  if (!unitsAvailable) {
+    showInputError($("admin-hostel-form").querySelector('[name="units_available"]'), "Units available is required");
+    valid = false;
+  } else {
+    const units = parseInt(unitsAvailable);
+    if (isNaN(units) || units < 1) {
+      showInputError($("admin-hostel-form").querySelector('[name="units_available"]'), "Please enter a valid number of units (at least 1)");
+      valid = false;
+    }
+  }
+
+  if (!landlordName) {
+    showInputError($("admin-hostel-form").querySelector('[name="landlord_name"]'), "Landlord name is required");
+    valid = false;
+  }
+
+  if (!landlordPhone) {
+    showInputError($("admin-hostel-form").querySelector('[name="landlord_phone"]'), "Landlord phone is required");
+    valid = false;
+  } else if (!/^\d{10,15}$/.test(landlordPhone.replace(/\s+/g, ''))) {
+    showInputError($("admin-hostel-form").querySelector('[name="landlord_phone"]'), "Please enter a valid phone number");
+    valid = false;
+  }
+
+  if (!valid) {
+    setLoading(btn, false);
+    return;
+  }
+
+  try {
+    // Handle image uploads
+    const imageFiles = fd.getAll("images");
+    let imagesJson = "[]";
+    if (imageFiles.some(file => file.size > 0)) {
+      const imagePromises = imageFiles
+        .filter(file => file.size > 0)
+        .map((file, index) => uploadFile("hostels", `${Date.now()}-${index}-${file.name}`, file));
+      const imageUrls = await Promise.all(imagePromises);
+      imagesJson = JSON.stringify(imageUrls);
+    }
+
+    // Prepare amenities as JSON array
+    let amenitiesJson = "[]";
+    if (amenities) {
+      const amenitiesArray = amenities.split(",").map(a => a.trim()).filter(a => a.length > 0);
+      amenitiesJson = JSON.stringify(amenitiesArray);
+    }
+
+    const hostelData = {
+      title: title,
+      type: type,
+      price_per_month: parseFloat(pricePerMonth),
+      location: location,
+      university: university,
+      available_from: availableFrom,
+      units_available: parseInt(unitsAvailable),
+      amenities: amenitiesJson,
+      landlord_name: landlordName,
+      landlord_phone: landlordPhone,
+      rules: rules,
+      images: imagesJson,
+      vendor_id: vendorId || null,
+      status: "pending" // New hostels start as pending
+    };
+
+    let result;
+    if (id) {
+      // Update existing hostel
+      result = await sb.from("hostels_listings").update(hostelData).eq("id", id);
+      await logAdmin("update_hostel", "hostel", id, title);
+    } else {
+      // Insert new hostel
+      result = await sb.from("hostels_listings").insert(hostelData);
+      await logAdmin("add_hostel", "hostel", result.data[0].id, title);
+    }
+
+    if (result.error) throw result.error;
+
+    await loadHostels();
+    toast("success", "Hostel saved successfully");
+    e.target.reset();
+  } catch (err) {
+    console.error(err);
+    toast("error", "Failed to save hostel: " + err.message);
+  } finally {
+    setLoading(btn, false);
+  }
+}
+
 // ─── Event delegation ────────────────────────────────────────────────────────
 document.addEventListener('click', async (e) => {
-  if (e.target.id === 'theme-toggle') {
+  if (e.target.id === 'theme-toggle' || e.target.id === 'theme-toggle-mobile') {
     toggleTheme();
     return;
+  }
+
+  if (e.target.id === 'notifications-toggle') {
+    toggleNotificationsPanel();
+    return;
+  }
+  if (e.target.id === 'notifications-close') {
+    toggleNotificationsPanel(false);
+    return;
+  }
+  if (e.target.id === 'notifications-mark-read') {
+    markAllNotificationsRead();
+    return;
+  }
+
+  const notifItem = e.target.closest('[data-notification-id]');
+  if (notifItem) {
+    markNotificationRead(notifItem.dataset.notificationId);
+    const link = notifItem.dataset.navLink;
+    toggleNotificationsPanel(false);
+    if (link) navigate(link);
+    return;
+  }
+
+  if (!e.target.closest('#header-search-wrap')) {
+    hideGlobalSearchDropdown();
   }
 
   if (e.target.id === 'forgot-password-toggle') {
@@ -1366,6 +2283,19 @@ document.addEventListener('click', async (e) => {
 
   const id = action.dataset.id;
   switch (action.dataset.action) {
+    case 'search-pick-product':
+      syncSearchInputs(normalizeSearchText($('global-search')?.value));
+      hideGlobalSearchDropdown();
+      navigate('detail', { id });
+      break;
+    case 'search-pick-hostel':
+      syncSearchInputs(normalizeSearchText($('global-search')?.value));
+      hideGlobalSearchDropdown();
+      navigate('hostels-detail', { id });
+      break;
+    case 'search-view-all':
+      openSearchPage(normalizeSearchText($('global-search')?.value));
+      break;
     case 'logout': logout(); break;
     case 'view-product': navigate('detail', { id }); break;
     case 'view-hostel': navigate('hostels-detail', { id }); break;
@@ -1513,18 +2443,49 @@ $$('.role-tab').forEach((tab) => {
 });
 
 ['filter-search', 'filter-category', 'filter-sort', 'filter-type'].forEach((id) => {
-  $(id)?.addEventListener('input', renderProducts);
-  $(id)?.addEventListener('change', renderProducts);
+  $(id)?.addEventListener('input', () => {
+    syncSearchInputs(normalizeSearchText($('filter-search')?.value));
+    renderProducts();
+  });
+  $(id)?.addEventListener('change', () => {
+    syncSearchInputs(normalizeSearchText($('filter-search')?.value));
+    renderProducts();
+  });
 });
 
-['hostel-type-filter', 'hostel-price-max', 'hostel-uni-filter'].forEach((id) => {
+['hostel-type-filter', 'hostel-price-max', 'hostel-uni-filter', 'hostel-search-filter'].forEach((id) => {
   $(id)?.addEventListener('input', () => {
+    syncSearchInputs(normalizeSearchText($('hostel-search-filter')?.value));
     if (id === 'hostel-price-max') $('hostel-price-label').textContent = `Max: ${formatCurrency($('hostel-price-max').value)}`;
     renderHostels();
   });
   $(id)?.addEventListener('change', renderHostels);
 });
 $$('.amenity-filter').forEach((c) => c.addEventListener('change', renderHostels));
+
+$('global-search')?.addEventListener('input', () => {
+  syncSearchInputs(normalizeSearchText($('global-search').value));
+  renderGlobalSearchDropdown();
+});
+
+$('global-search')?.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    openSearchPage(normalizeSearchText($('global-search').value));
+  }
+  if (e.key === 'Escape') hideGlobalSearchDropdown();
+});
+
+$$('.search-tab').forEach((tab) => {
+  tab.addEventListener('click', () => {
+    STATE.searchTab = tab.dataset.searchTab;
+    renderSearchResults();
+  });
+});
+
+document.querySelectorAll('input[name=payment]').forEach((radio) => {
+  radio.addEventListener('change', updateCheckoutPaymentUi);
+});
 
 $('checkout-form')?.addEventListener('submit', placeOrder);
 $('appointment-form')?.addEventListener('submit', submitAppointment);
@@ -1689,12 +2650,19 @@ async function boot() {
   $('year').textContent = new Date().getFullYear();
   const apptSelect = $('appt-time');
   if (apptSelect) apptSelect.innerHTML = TIME_SLOTS.map((t) => `<option>${t}</option>`).join('');
+  $('vendor-hostel-form')?.addEventListener('submit', submitVendorHostelForm);
+  $('admin-hostel-form')?.addEventListener('submit', submitAdminHostelForm);
 
   showLoader(true);
   try {
     await loadSettings();
     await loadProducts();
     const { data: { session } } = await sb.auth.getSession();
+    if (session && isPasswordRecoveryFlow()) {
+      await loadHostels();
+      navigate('reset-password');
+      return;
+    }
     if (session) {
       const { data: profile } = await sb.from('profiles').select('*').eq('id', session.user.id).single();
       if (profile?.status === 'approved') {
@@ -1702,9 +2670,8 @@ async function boot() {
         STATE.profile = profile;
         await loadUserData();
         await loadHostels();
-        if (window.location.hash.includes('access_token')) {
-          navigate('reset-password');
-        } else if (profile.role === 'admin') {
+        initUserSession();
+        if (profile.role === 'admin') {
           navigate('admin');
         } else if (profile.role === 'vendor') {
           navigate('vendor-dashboard');
@@ -1727,10 +2694,17 @@ async function boot() {
   showLoader(false);
 }
 
-sb.auth.onAuthStateChange(async (_event, session) => {
+sb.auth.onAuthStateChange(async (event, session) => {
+  if (event === 'PASSWORD_RECOVERY') {
+    navigate('reset-password');
+    return;
+  }
   if (!session && STATE.profile) {
+    teardownRealtime();
     STATE.user = null;
     STATE.profile = null;
+    STATE.notifications = [];
+    updateNotificationBadge();
   }
 });
 
