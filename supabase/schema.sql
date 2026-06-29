@@ -95,6 +95,8 @@ create table if not exists orders (
   delivery_fee numeric(10, 2) default 5.00,
   total numeric(10, 2) not null,
   payment_method text,
+  payment_reference text,
+  payment_status text default 'pending' check (payment_status in ('pending', 'paid', 'cod', 'failed')),
   delivery_name text,
   delivery_phone text,
   delivery_address text,
@@ -247,6 +249,49 @@ create trigger on_review_change
   after insert or update or delete on reviews
   for each row execute function public.update_product_rating();
 
+-- ─── INDEXES ────────────────────────────────────────────────────────────────
+
+-- Products indexes
+create index if not exists idx_products_created_at on products(created_at desc);
+create index if not exists idx_products_category on products(category);
+create index if not exists idx_products_type on products(type);
+create index if not exists idx_products_vendor_id on products(vendor_id);
+create index if not exists idx_products_featured on products(featured) where featured = true;
+create index if not exists idx_products_in_stock on products(in_stock) where in_stock = true;
+
+-- Hostels listings indexes
+create index if not exists idx_hostels_status on hostels_listings(status);
+create index if not exists idx_hostels_vendor_id on hostels_listings(vendor_id);
+create index if not exists idx_hostels_created_at on hostels_listings(created_at desc);
+create index if not exists idx_hostels_price on hostels_listings(price_per_month);
+create index if not exists idx_hostels_status_vendor on hostels_listings(status, vendor_id) where status = 'live';
+
+-- Cart items indexes
+create index if not exists idx_cart_items_user_id on cart_items(user_id);
+create index if not exists idx_cart_items_product_id on cart_items(product_id);
+create index if not exists idx_cart_items_user_product on cart_items(user_id, product_id);
+
+-- Wishlist items indexes
+create index if not exists idx_wishlist_items_user_id on wishlist_items(user_id);
+create index if not exists idx_wishlist_items_product_id on wishlist_items(product_id);
+create index if not exists idx_wishlist_items_hostels_id on wishlist_items(hostels_id);
+create index if not exists idx_wishlist_items_user_product on wishlist_items(user_id, product_id);
+create index if not exists idx_wishlist_items_user_hostel on wishlist_items(user_id, hostels_id);
+
+-- Orders indexes
+create index if not exists idx_orders_user_id on orders(user_id);
+create index if not exists idx_orders_status on orders(status);
+create index if not exists idx_orders_created_at on orders(created_at desc);
+create index if not exists idx_orders_user_status on orders(user_id, status);
+create index if not exists idx_orders_user_created on orders(user_id, created_at desc);
+
+-- Appointments indexes
+create index if not exists idx_appointments_user_id on appointments(user_id);
+create index if not exists idx_appointments_status on appointments(status);
+create index if not exists idx_appointments_user_status on appointments(user_id, status);
+create index if not exists idx_appointments_product_id on appointments(product_id);
+create index if not exists idx_appointments_hostels_id on appointments(hostels_id);
+
 -- ─── RLS ────────────────────────────────────────────────────────────────────
 
 alter table profiles enable row level security;
@@ -354,3 +399,8 @@ create policy audit_insert on audit_log for insert with check (public.auth_role(
 
 -- Bootstrap first admin (replace email after you register):
 -- update profiles set role = 'admin', status = 'approved' where email = 'you@example.com';
+
+-- ─── MIGRATIONS (safe to re-run on existing projects) ───────────────────────
+alter table orders add column if not exists payment_reference text;
+alter table orders add column if not exists payment_status text default 'pending';
+-- Enable Realtime: Dashboard → Database → Replication → orders, appointments, profiles
