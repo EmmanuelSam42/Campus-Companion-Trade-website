@@ -167,7 +167,7 @@ Deno.serve(async (req: Request) => {
         return json({ error: "Order ID and payment reference are required." }, 400);
       }
       const { data: order, error: orderError } = await admin.from("orders")
-        .select("id, user_id, order_number, total, payment_status, payment_reference")
+        .select("id, user_id, order_number, total, payment_method, payment_status, payment_reference")
         .eq("id", body.orderId).eq("user_id", user.id).maybeSingle();
       if (orderError || !order) return json({ error: "Order not found." }, 404);
       if (!ONLINE_METHODS.has(String(order.payment_method || "")) && order.payment_status !== "paid") {
