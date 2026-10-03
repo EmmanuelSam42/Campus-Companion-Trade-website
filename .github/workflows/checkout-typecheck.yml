@@ -1,0 +1,37 @@
+name: Checkout validation
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "app.js"
+      - "supabase/functions/checkout/**"
+      - ".github/workflows/checkout-typecheck.yml"
+  push:
+    branches: ["fix/secure-checkout-paystack"]
+    paths:
+      - "app.js"
+      - "supabase/functions/checkout/**"
+      - ".github/workflows/checkout-typecheck.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  checkout-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check frontend JavaScript syntax
+        run: node --check app.js
+      - name: Set up Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Type-check checkout Edge Function
+        run: deno check supabase/functions/checkout/index.ts
