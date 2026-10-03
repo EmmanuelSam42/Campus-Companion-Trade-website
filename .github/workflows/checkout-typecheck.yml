@@ -1,0 +1,29 @@
+name: Checkout function type-check
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "supabase/functions/checkout/**"
+      - ".github/workflows/checkout-typecheck.yml"
+  push:
+    branches: ["fix/secure-checkout-paystack"]
+    paths:
+      - "supabase/functions/checkout/**"
+      - ".github/workflows/checkout-typecheck.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  deno-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Type-check checkout Edge Function
+        run: deno check supabase/functions/checkout/index.ts
