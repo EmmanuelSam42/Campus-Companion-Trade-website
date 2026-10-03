@@ -721,7 +721,7 @@ function updateCheckoutPaymentUi() {
   }
 }
 
-function initiatePaystackPayment({ email, amount, orderNumber, paymentMethod }) {
+function initiatePaystackPayment({ email, amount, orderNumber, paymentMethod, reference }) {
   return new Promise((resolve, reject) => {
     if (!paystackEnabled()) {
       reject(new Error('Paystack is not configured'));
@@ -732,10 +732,16 @@ function initiatePaystackPayment({ email, amount, orderNumber, paymentMethod }) 
       email,
       amount: Math.round(Number(amount) * 100),
       currency: 'GHS',
-      ref: `${orderNumber}-${Date.now()}`,
+      ref: reference,
       channels: paymentMethod === 'Card' ? ['card'] : ['mobile_money', 'card'],
       metadata: { order_number: orderNumber, custom_fields: [{ display_name: 'Order', variable_name: 'order_number', value: orderNumber }] },
-      callback(response) { resolve(response.reference); },
+      callback(response) {
+        if (response.reference !== reference) {
+          reject(new Error('Payment reference did not match this order.'));
+          return;
+        }
+        resolve(response.reference);
+      },
       onClose() { reject(new Error('Payment cancelled')); },
     });
     handler.openIframe();
@@ -1419,88 +1425,73 @@ async function placeOrder(e) {
   e.preventDefault();
   if (!STATE.cart.length) { toast('error', 'Cart is empty.'); return; }
   const btn = e.target.querySelector('[type=submit]');
-  setLoading(btn, true);
-
-  const items = STATE.cart.map((c) => ({
-    product_id: c.product_id,
-    name: c.products.name,
-    price: c.products.price,
-    quantity: c.quantity,
-    image_url: c.products.image_url,
-    vendor_name: c.products.vendor_name,
-  }));
-  const subtotal = items.reduce((s, i) => s + i.price * i.quantity, 0);
-  const total = subtotal + DELIVERY_FEE;
-  const orderNumber = 'CCT-' + Date.now().toString(36).toUpperCase();
   const payment = document.querySelector('input[name=payment]:checked')?.value || 'Mobile Money';
-  const room = $('co-room').value.trim();
-  const address = $('co-address').value.trim() + (room ? `, Room ${room}` : '');
-  const email = STATE.profile.email || $('co-name').value.trim();
-
-  let paymentReference = null;
-  let paymentStatus = payment === 'Cash on Delivery' ? 'cod' : 'pending';
-
-  if ((payment === 'Mobile Money' || payment === 'Card') && paystackEnabled()) {
-    try {
-      paymentReference = await initiatePaystackPayment({
-        email,
-        amount: total,
-        orderNumber,
-        paymentMethod: payment,
-      });
-      paymentStatus = 'paid';
-    } catch (err) {
-      toast('error', err.message || 'Payment failed.');
-      setLoading(btn, false);
-      return;
-    }
-  } else if ((payment === 'Mobile Money' || payment === 'Card') && !paystackEnabled()) {
-    toast('warning', 'Online payment not configured — order saved without Paystack.');
-  }
-
-  const { error } = await sb.from('orders').insert({
-    order_number: orderNumber,
-    user_id: STATE.profile.id,
-    user_name: $('co-name').value.trim(),
-    user_email: email,
-    items,
-    subtotal,
-    delivery_fee: DELIVERY_FEE,
-    total,
-    payment_method: payment,
-    payment_reference: paymentReference,
-    payment_status: paymentStatus,
-    delivery_name: $('co-name').value.trim(),
-    delivery_phone: $('co-phone').value.trim(),
-    delivery_address: address,
-    notes: $('co-notes').value.trim(),
-    status: 'Processing',
-  });
-
-  if (error) {
-    toast('error', error.message);
-    setLoading(btn, false);
+  const isOnline = payment === 'Mobile Money' || payment === 'Card';
+  if (isOnline && !paystackEnabled()) {
+    toast('error', 'Online payment is not configured. Please choose Cash on Delivery or try again later.');
     return;
   }
 
-  await sb.from('cart_items').delete().eq('user_id', STATE.profile.id);
-  await loadCart();
-  await loadOrders();
-  $('checkout-form').classList.add('hidden');
-  $('checkout-success').classList.remove('hidden');
-  $('checkout-success').innerHTML = `
-    <div class="check">✓</div>
-    <h2>Order placed!</h2>
-    <p class="order-number">#${orderNumber}</p>
-    ${paymentReference ? `<p style="color:var(--muted)">Payment ref: ${escapeHtml(paymentReference)}</p>` : ''}
-    <p>Thank you for shopping with Campus Companion Trade.</p>
-    <div class="hero-ctas" style="margin-top:1.5rem">
-      <button class="btn-primary" data-nav="home">Back to Home</button>
-      <button class="btn-outline" data-nav="orders">View My Orders</button>
-      <button class="btn-gold" data-nav="products">Shop More</button>
-    </div>`;
-  toast('success', 'Order placed successfully!');
-  setLoading(btn, false);
+  setLoading(btn, true);
+  const room = $('co-room').value.trim();
+  const address = $('co-address').value.trim() + (room ? `, Room ${room}` : '');
+  let createdOrder = null;
+  let paymentReference = null;
+
+  try {
+    const { data, error } = await sb.functions.invoke('checkout', {
+      body: {
+        action: 'create',
+        items: STATE.cart.map((c) => ({ product_id: c.product_id, quantity: c.quantity })),
+        paymentMethod: payment,
+        deliveryName: $('co-name').value.trim(),
+        deliveryPhone: $('co-phone').value.trim(),
+        deliveryAddress: address,
+        notes: $('co-notes').value.trim(),
+      },
+    });
+    if (error) throw new Error(error.message || 'Could not create the order.');
+    if (!data?.orderId || !data?.orderNumber) throw new Error(data?.error || 'The server returned an invalid order response.');
+    createdOrder = data;
+
+    if (isOnline) {
+      paymentReference = await initiatePaystackPayment({
+        email: data.email,
+        amount: data.total,
+        orderNumber: data.orderNumber,
+        paymentMethod: payment,
+        reference: data.paymentReference,
+      });
+      const { data: verified, error: verifyError } = await sb.functions.invoke('checkout', {
+        body: { action: 'verify', orderId: data.orderId, reference: paymentReference },
+      });
+      if (verifyError) throw new Error(verifyError.message || 'Payment verification failed.');
+      if (!verified?.verified) throw new Error(verified?.error || 'Payment has not been verified. Your order remains pending; please contact support before retrying.');
+    }
+
+    await sb.from('cart_items').delete().eq('user_id', STATE.profile.id);
+    await loadCart();
+    await loadOrders();
+    $('checkout-form').classList.add('hidden');
+    $('checkout-success').classList.remove('hidden');
+    $('checkout-success').innerHTML = `
+      <div class="check">✓</div>
+      <h2>Order placed!</h2>
+      <p class="order-number">#${escapeHtml(data.orderNumber)}</p>
+      ${paymentReference ? `<p style="color:var(--muted)">Payment ref: ${escapeHtml(paymentReference)}</p>` : ''}
+      <p>Thank you for shopping with Campus Companion Trade.</p>
+      <div class="hero-ctas" style="margin-top:1.5rem">
+        <button class="btn-primary" data-nav="home">Back to Home</button>
+        <button class="btn-outline" data-nav="orders">View My Orders</button>
+        <button class="btn-gold" data-nav="products">Shop More</button>
+      </div>`;
+    toast('success', 'Order placed successfully!');
+  } catch (err) {
+    console.error('Checkout failed', { orderId: createdOrder?.orderId, message: err?.message });
+    toast('error', err.message || 'Checkout failed. If you completed payment, contact support with your order number.');
+  } finally {
+    setLoading(btn, false);
+  }
 }
 
 function renderOrders() {
@@ -1828,9 +1819,9 @@ async function renderAdminDashboard() {
   </div>
   <div class="admin-panel ${STATE.adminPanel === 'orders' ? 'active' : ''}" data-apanel="orders">
     <div class="table-wrap"><table class="data-table"><thead><tr><th>Order</th><th>Customer</th><th>Total</th><th>Payment</th><th>Status</th><th>Update</th></tr></thead>
-    <tbody>${STATE.orders.map(o=>`<tr><td>${o.order_number}</td><td>${escapeHtml(o.user_name||'')}</td><td>${formatCurrency(o.total)}</td><td>${o.payment_method}</td><td>${o.status}</td>
+    <tbody>${STATE.orders.map(o=>`<tr><td>${o.order_number}</td><td>${escapeHtml(o.user_name||'')}</td><td>${formatCurrency(o.total)}</td><td>${o.payment_method}</td><td>${({ pending: 'Pending', processing: 'Processing', completed: 'Completed', cancelled: 'Cancelled' })[String(o.status || '').toLowerCase()] || escapeHtml(o.status || '')}</td>
     <td><select data-action="order-status" data-id="${o.id}">
-      ${['Processing','Confirmed','Delivered','Cancelled'].map(s=>`<option ${s===o.status?'selected':''}>${s}</option>`).join('')}
+      ${[['pending','Pending'],['processing','Processing'],['completed','Completed'],['cancelled','Cancelled']].map(([value,label])=>`<option value="${value}" ${value===String(o.status || '').toLowerCase()?'selected':''}>${label}</option>`).join('')}
     </select></td></tr>`).join('')}</tbody></table></div>
   </div>
   <div class="admin-panel ${STATE.adminPanel === 'appointments' ? 'active' : ''}" data-apanel="appointments">
