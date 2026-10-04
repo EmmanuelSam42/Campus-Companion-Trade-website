@@ -101,9 +101,18 @@ function closeConfirm() {
 }
 
 async function uploadFile(bucket, path, file) {
-  const { error } = await sb.storage.from(bucket).upload(path, file, { upsert: true });
+  const userId = STATE.profile?.id;
+  if (!userId) throw new Error('Sign in before uploading files.');
+  if (!file || !file.size) throw new Error('Choose an image file first.');
+  const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+  if (!allowedTypes.includes(file.type)) throw new Error('Use a JPG, PNG, WebP, or GIF image.');
+  if (file.size > 5 * 1024 * 1024) throw new Error('Images must be 5 MB or smaller.');
+  // Storage policies require the first folder to be the authenticated user's UUID.
+  const fileName = String(path).split('/').pop().replace(/[^a-zA-Z0-9._-]/g, '_');
+  const objectPath = `${userId}/${fileName}`;
+  const { error } = await sb.storage.from(bucket).upload(objectPath, file, { upsert: true, contentType: file.type });
   if (error) throw error;
-  const { data } = sb.storage.from(bucket).getPublicUrl(path);
+  const { data } = sb.storage.from(bucket).getPublicUrl(objectPath);
   return data.publicUrl;
 }
 
@@ -939,15 +948,9 @@ async function handleRegister(e) {
     meta.social_handle = $('reg-social').value.trim();
     meta.business_bio = $('reg-bio').value.trim();
     if ($('reg-staff-id').value.trim()) meta.student_id = $('reg-staff-id').value.trim();
-    const logoFile = $('reg-logo').files[0];
-    if (logoFile) {
-      try {
-        const path = `vendor-${Date.now()}-${logoFile.name}`;
-        meta.business_logo_url = await uploadFile('logos', path, logoFile);
-      } catch (err) {
-        toast('warning', 'Logo upload failed; continuing without logo.');
-      }
-    }
+    // Registration precedes authentication, and vendor uploads are restricted until approval.
+    // The selected logo is uploaded from Profile after the vendor is approved.
+    const logoPending = Boolean($('reg-logo').files[0]);
   }
 
   const { error } = await sb.auth.signUp({
@@ -968,6 +971,7 @@ async function handleRegister(e) {
   st.innerHTML = '<strong>Pending approval</strong> — An admin must approve your account before you can log in.';
   st.classList.remove('hidden');
   toast('warning', 'Registration submitted. Await approval.');
+  if (role === 'vendor' && logoPending) toast('info', 'After approval, upload your business logo from Profile.');
   e.target.reset();
   setLoading(btn, false);
 }
@@ -1559,6 +1563,11 @@ function renderProfileForm() {
   $('profile-name').value = p.full_name || '';
   $('profile-phone').value = p.phone || '';
   $('profile-hall').value = p.hall || '';
+  const avatarPreview = $('profile-avatar-preview');
+  if (avatarPreview) {
+    avatarPreview.src = p.avatar_url || '';
+    avatarPreview.classList.toggle('hidden', !p.avatar_url);
+  }
   const vf = $('profile-vendor-fields');
   if (p.role === 'vendor') {
     vf.classList.remove('hidden');
@@ -2505,14 +2514,17 @@ $('profile-form')?.addEventListener('submit', async (e) => {
   e.preventDefault();
   const btn = e.target.querySelector('[type=submit]');
   setLoading(btn, true);
-  let business_logo_url = STATE.profile.business_logo_url;
+  let business_logo_url = STATE.profile.business_logo_url || null;
+  let avatar_url = STATE.profile.avatar_url || null;
   const logoFile = $('profile-logo')?.files[0];
   const avatarFile = $('profile-avatar')?.files[0];
   try {
-    if (logoFile) business_logo_url = await uploadFile('logos', `${STATE.profile.id}-logo`, logoFile);
-    if (avatarFile) await uploadFile('avatars', `${STATE.profile.id}-avatar`, avatarFile);
+    if (logoFile) business_logo_url = await uploadFile('logos', `${STATE.profile.id}-logo.${logoFile.type.split('/')[1]}`, logoFile);
+    if (avatarFile) avatar_url = await uploadFile('avatars', `${STATE.profile.id}-avatar.${avatarFile.type.split('/')[1]}`, avatarFile);
   } catch (err) {
-    toast('warning', 'Upload issue: ' + err.message);
+    toast('error', 'Upload failed: ' + err.message);
+    setLoading(btn, false);
+    return;
   }
   const updates = {
     full_name: $('profile-name').value.trim(),
@@ -2524,13 +2536,19 @@ $('profile-form')?.addEventListener('submit', async (e) => {
     social_handle: $('profile-social')?.value?.trim(),
     campus_location: $('profile-location')?.value?.trim(),
     business_logo_url,
+    avatar_url,
   };
   const { error } = await sb.from('profiles').update(updates).eq('id', STATE.profile.id);
-  if (error) toast('error', error.message);
-  else {
-    toast('warning', 'Profile updated — may require re-approval.');
-    const { data } = await sb.from('profiles').select('*').eq('id', STATE.profile.id).single();
-    STATE.profile = data;
+  if (error) {
+    toast('error', error.message);
+  } else {
+    const { data, error: reloadError } = await sb.from('profiles').select('*').eq('id', STATE.profile.id).single();
+    if (reloadError) toast('error', 'Profile saved, but reloading it failed: ' + reloadError.message);
+    else {
+      STATE.profile = data;
+      renderProfileForm();
+      toast('success', 'Profile updated.');
+    }
   }
   setLoading(btn, false);
 });
