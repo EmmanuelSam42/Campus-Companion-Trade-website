@@ -264,8 +264,8 @@
                   ><input type="text" id="reg-social" />
                 </div>
                 <div class="form-group">
-                  <label>Business logo (optional)</label
-                  ><input type="file" id="reg-logo" accept="image/*" />
+                  <label>Business logo (optional; upload after vendor approval)</label
+                  ><input type="file" id="reg-logo" accept="image/jpeg,image/png,image/webp,image/gif" />
                 </div>
                 <div class="form-group">
                   <label>Short bio (max 200)</label
@@ -609,8 +609,11 @@
         <h2 class="section-title">Profile</h2>
         <form id="profile-form" style="max-width: 520px">
           <div class="form-group">
-            <label>Profile photo</label
-            ><input type="file" id="profile-avatar" accept="image/*" />
+            <label>Profile photo</label>
+            <img id="profile-avatar-preview" class="hidden" alt="Current profile photo"
+              style="display:block;max-width:96px;max-height:96px;object-fit:cover;border-radius:50%;margin:0.5rem 0" />
+            <input type="file" id="profile-avatar" accept="image/jpeg,image/png,image/webp,image/gif" />
+            <small>JPG, PNG, WebP, or GIF; maximum 5 MB.</small>
           </div>
           <div class="form-group">
             <label>Full name</label
