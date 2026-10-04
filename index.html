@@ -264,8 +264,8 @@
                   ><input type="text" id="reg-social" />
                 </div>
                 <div class="form-group">
-                  <label>Business logo (optional)</label
-                  ><input type="file" id="reg-logo" accept="image/*" />
+                  <label>Business logo (optional; upload after vendor approval)</label
+                  ><input type="file" id="reg-logo" accept="image/jpeg,image/png,image/webp,image/gif" />
                 </div>
                 <div class="form-group">
                   <label>Short bio (max 200)</label
@@ -606,11 +606,41 @@
       </div>
 
       <div id="page-profile" class="page hidden">
-        <h2 class="section-title">Profile</h2>
-        <form id="profile-form" style="max-width: 520px">
+        <h2 class="section-title">My Profile</h2>
+        <section class="profile-summary" aria-labelledby="profile-summary-heading">
+          <div class="profile-summary-header">
+            <img id="profile-summary-avatar" class="profile-summary-avatar hidden" alt="Profile photo" />
+            <div class="profile-summary-heading">
+              <h3 id="profile-summary-name">Your profile</h3>
+              <p id="profile-summary-email" class="muted"></p>
+              <div class="profile-summary-badges">
+                <span id="profile-summary-role" class="profile-meta-badge"></span>
+                <span id="profile-summary-status" class="profile-meta-badge"></span>
+              </div>
+            </div>
+          </div>
+          <div class="profile-summary-grid">
+            <div class="profile-summary-item"><span>Student ID</span><strong id="profile-summary-student-id">Not added</strong></div>
+            <div class="profile-summary-item"><span>Phone</span><strong id="profile-summary-phone">Not added</strong></div>
+            <div class="profile-summary-item"><span>Hall / Hostel</span><strong id="profile-summary-hall">Not added</strong></div>
+            <div class="profile-summary-item profile-vendor-summary hidden"><span>Business name</span><strong id="profile-summary-business">Not added</strong></div>
+            <div class="profile-summary-item profile-vendor-summary hidden"><span>Campus location</span><strong id="profile-summary-location">Not added</strong></div>
+            <div class="profile-summary-item profile-vendor-summary hidden"><span>Social handle</span><strong id="profile-summary-social">Not added</strong></div>
+          </div>
+          <div id="profile-summary-bio-wrap" class="profile-summary-bio hidden">
+            <span>About your business</span>
+            <p id="profile-summary-bio"></p>
+          </div>
+          <button type="button" class="btn-outline" data-profile-edit>Edit profile details</button>
+        </section>
+        <h3 class="section-subtitle">Edit your details</h3>
+        <form id="profile-form" style="max-width: 720px">
           <div class="form-group">
-            <label>Profile photo</label
-            ><input type="file" id="profile-avatar" accept="image/*" />
+            <label>Profile photo</label>
+            <img id="profile-avatar-preview" class="hidden" alt="Current profile photo"
+              style="display:block;max-width:96px;max-height:96px;object-fit:cover;border-radius:50%;margin:0.5rem 0" />
+            <input type="file" id="profile-avatar" accept="image/jpeg,image/png,image/webp,image/gif" />
+            <small>JPG, PNG, WebP, or GIF; maximum 5 MB.</small>
           </div>
           <div class="form-group">
             <label>Full name</label

@@ -101,9 +101,18 @@ function closeConfirm() {
 }
 
 async function uploadFile(bucket, path, file) {
-  const { error } = await sb.storage.from(bucket).upload(path, file, { upsert: true });
+  const userId = STATE.profile?.id;
+  if (!userId) throw new Error('Sign in before uploading files.');
+  if (!file || !file.size) throw new Error('Choose an image file first.');
+  const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+  if (!allowedTypes.includes(file.type)) throw new Error('Use a JPG, PNG, WebP, or GIF image.');
+  if (file.size > 5 * 1024 * 1024) throw new Error('Images must be 5 MB or smaller.');
+  // Storage policies require the first folder to be the authenticated user's UUID.
+  const fileName = String(path).split('/').pop().replace(/[^a-zA-Z0-9._-]/g, '_');
+  const objectPath = `${userId}/${fileName}`;
+  const { error } = await sb.storage.from(bucket).upload(objectPath, file, { upsert: true, contentType: file.type });
   if (error) throw error;
-  const { data } = sb.storage.from(bucket).getPublicUrl(path);
+  const { data } = sb.storage.from(bucket).getPublicUrl(objectPath);
   return data.publicUrl;
 }
 
@@ -932,6 +941,7 @@ async function handleRegister(e) {
     hall: $('reg-hall').value.trim(),
   };
 
+  let logoPending = false;
   if (role === 'vendor') {
     meta.business_name = $('reg-business-name').value.trim();
     meta.business_type = $('reg-business-type').value;
@@ -939,15 +949,9 @@ async function handleRegister(e) {
     meta.social_handle = $('reg-social').value.trim();
     meta.business_bio = $('reg-bio').value.trim();
     if ($('reg-staff-id').value.trim()) meta.student_id = $('reg-staff-id').value.trim();
-    const logoFile = $('reg-logo').files[0];
-    if (logoFile) {
-      try {
-        const path = `vendor-${Date.now()}-${logoFile.name}`;
-        meta.business_logo_url = await uploadFile('logos', path, logoFile);
-      } catch (err) {
-        toast('warning', 'Logo upload failed; continuing without logo.');
-      }
-    }
+    // Registration precedes authentication, and vendor uploads are restricted until approval.
+    // The selected logo is uploaded from Profile after the vendor is approved.
+    logoPending = Boolean($('reg-logo').files[0]);
   }
 
   const { error } = await sb.auth.signUp({
@@ -968,6 +972,7 @@ async function handleRegister(e) {
   st.innerHTML = '<strong>Pending approval</strong> — An admin must approve your account before you can log in.';
   st.classList.remove('hidden');
   toast('warning', 'Registration submitted. Await approval.');
+  if (role === 'vendor' && logoPending) toast('info', 'After approval, upload your business logo from Profile.');
   e.target.reset();
   setLoading(btn, false);
 }
@@ -1556,9 +1561,42 @@ function renderWishlist() {
 function renderProfileForm() {
   const p = STATE.profile;
   if (!p) return;
+
+  const setText = (id, value, fallback = 'Not added') => {
+    const el = $(id);
+    if (el) el.textContent = value == null || String(value).trim() === '' ? fallback : String(value);
+  };
+
+  // Read-only profile summary uses the current signed-in user's profile data.
+  setText('profile-summary-name', p.full_name, 'Your profile');
+  setText('profile-summary-email', STATE.user?.email, 'Email unavailable');
+  setText('profile-summary-role', p.role ? p.role.charAt(0).toUpperCase() + p.role.slice(1) : 'User', 'User');
+  setText('profile-summary-status', p.status ? p.status.charAt(0).toUpperCase() + p.status.slice(1) : 'Active', 'Active');
+  setText('profile-summary-student-id', p.student_id);
+  setText('profile-summary-phone', p.phone);
+  setText('profile-summary-hall', p.hall);
+  setText('profile-summary-business', p.business_name);
+  setText('profile-summary-location', p.campus_location);
+  setText('profile-summary-social', p.social_handle);
+  setText('profile-summary-bio', p.business_bio, '');
+
+  const summaryAvatar = $('profile-summary-avatar');
+  if (summaryAvatar) {
+    summaryAvatar.src = p.avatar_url || '';
+    summaryAvatar.classList.toggle('hidden', !p.avatar_url);
+  }
+  $('.profile-vendor-summary').forEach((el) => el.classList.toggle('hidden', p.role !== 'vendor'));
+  const bioWrap = $('profile-summary-bio-wrap');
+  if (bioWrap) bioWrap.classList.toggle('hidden', p.role !== 'vendor' || !p.business_bio);
+
   $('profile-name').value = p.full_name || '';
   $('profile-phone').value = p.phone || '';
   $('profile-hall').value = p.hall || '';
+  const avatarPreview = $('profile-avatar-preview');
+  if (avatarPreview) {
+    avatarPreview.src = p.avatar_url || '';
+    avatarPreview.classList.toggle('hidden', !p.avatar_url);
+  }
   const vf = $('profile-vendor-fields');
   if (p.role === 'vendor') {
     vf.classList.remove('hidden');
@@ -2501,18 +2539,28 @@ document.addEventListener('click', (e) => {
   if (e.target.id === 'lightbox') $('lightbox').classList.add('hidden');
 });
 
+document.addEventListener('click', (e) => {
+  if (e.target.closest('[data-profile-edit]')) {
+    $('profile-form')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    $('profile-name')?.focus({ preventScroll: true });
+  }
+});
+
 $('profile-form')?.addEventListener('submit', async (e) => {
   e.preventDefault();
   const btn = e.target.querySelector('[type=submit]');
   setLoading(btn, true);
-  let business_logo_url = STATE.profile.business_logo_url;
+  let business_logo_url = STATE.profile.business_logo_url || null;
+  let avatar_url = STATE.profile.avatar_url || null;
   const logoFile = $('profile-logo')?.files[0];
   const avatarFile = $('profile-avatar')?.files[0];
   try {
-    if (logoFile) business_logo_url = await uploadFile('logos', `${STATE.profile.id}-logo`, logoFile);
-    if (avatarFile) await uploadFile('avatars', `${STATE.profile.id}-avatar`, avatarFile);
+    if (logoFile) business_logo_url = await uploadFile('logos', `${STATE.profile.id}-logo.${logoFile.type.split('/')[1]}`, logoFile);
+    if (avatarFile) avatar_url = await uploadFile('avatars', `${STATE.profile.id}-avatar.${avatarFile.type.split('/')[1]}`, avatarFile);
   } catch (err) {
-    toast('warning', 'Upload issue: ' + err.message);
+    toast('error', 'Upload failed: ' + err.message);
+    setLoading(btn, false);
+    return;
   }
   const updates = {
     full_name: $('profile-name').value.trim(),
@@ -2524,13 +2572,19 @@ $('profile-form')?.addEventListener('submit', async (e) => {
     social_handle: $('profile-social')?.value?.trim(),
     campus_location: $('profile-location')?.value?.trim(),
     business_logo_url,
+    avatar_url,
   };
   const { error } = await sb.from('profiles').update(updates).eq('id', STATE.profile.id);
-  if (error) toast('error', error.message);
-  else {
-    toast('warning', 'Profile updated — may require re-approval.');
-    const { data } = await sb.from('profiles').select('*').eq('id', STATE.profile.id).single();
-    STATE.profile = data;
+  if (error) {
+    toast('error', error.message);
+  } else {
+    const { data, error: reloadError } = await sb.from('profiles').select('*').eq('id', STATE.profile.id).single();
+    if (reloadError) toast('error', 'Profile saved, but reloading it failed: ' + reloadError.message);
+    else {
+      STATE.profile = data;
+      renderProfileForm();
+      toast('success', 'Profile updated.');
+    }
   }
   setLoading(btn, false);
 });
@@ -2562,76 +2616,95 @@ document.addEventListener('submit', async (e) => {
 }
   if (e.target.id === 'vendor-product-form') {
     e.preventDefault();
-    const fd = new FormData(e.target);
-    let image_url = '';
-    const file = fd.get('image');
-    if (file?.size) image_url = await uploadFile('products', `${Date.now()}-${file.name}`, file);
-    const row = {
-      name: fd.get('name'),
-      category: fd.get('category'),
-      type: fd.get('type'),
-      price: Number(fd.get('price')),
-      description: fd.get('description'),
-      availability_hours: fd.get('availability_hours'),
-      vendor_id: STATE.profile.id,
-      vendor_name: STATE.profile.business_name || STATE.profile.full_name,
-      image_url: image_url || undefined,
-    };
-    const pid = fd.get('id');
-    if (pid) await sb.from('products').update(row).eq('id', pid);
-    else await sb.from('products').insert(row);
-    await loadProducts();
-    toast('success', 'Product saved');
-    STATE.vendorPanel = 'products';
-    renderVendorDashboard();
+    const btn = e.target.querySelector('[type=submit]');
+    setLoading(btn, true);
+    try {
+      const fd = new FormData(e.target);
+      let image_url;
+      const file = fd.get('image');
+      if (file?.size) image_url = await uploadFile('products', `${Date.now()}-${file.name}`, file);
+      const row = {
+        name: fd.get('name'),
+        category: fd.get('category'),
+        type: fd.get('type'),
+        price: Number(fd.get('price')),
+        description: fd.get('description'),
+        availability_hours: fd.get('availability_hours'),
+        vendor_id: STATE.profile.id,
+        vendor_name: STATE.profile.business_name || STATE.profile.full_name,
+        ...(image_url ? { image_url } : {}),
+      };
+      const pid = fd.get('id');
+      const result = pid
+        ? await sb.from('products').update(row).eq('id', pid)
+        : await sb.from('products').insert(row);
+      if (result.error) throw result.error;
+      await loadProducts();
+      toast('success', 'Product saved');
+      STATE.vendorPanel = 'products';
+      renderVendorDashboard();
+    } catch (err) {
+      toast('error', 'Could not save product: ' + err.message);
+    } finally {
+      setLoading(btn, false);
+    }
   }
   if (e.target.id === 'admin-product-form') {
     e.preventDefault();
     const btn = e.target.querySelector('[type=submit]');
     setLoading(btn, true);
-    const fd = new FormData(e.target);
-    let image_url = '';
-    const file = fd.get('image');
-    if (file?.size) {
-      try {
-        image_url = await uploadFile('products', `admin-${Date.now()}-${file.name}`, file);
-      } catch (err) {
-        toast('warning', 'Image upload failed; continuing without image.');
-      }
+    try {
+      const fd = new FormData(e.target);
+      let image_url;
+      const file = fd.get('image');
+      if (file?.size) image_url = await uploadFile('products', `admin-${Date.now()}-${file.name}`, file);
+      const vid = fd.get('vendor_id');
+      const vendor = STATE.profiles.find((p) => p.id === vid);
+      const result = await sb.from('products').insert({
+        name: fd.get('name'),
+        category: fd.get('category'),
+        type: fd.get('type'),
+        price: Number(fd.get('price')),
+        description: fd.get('description'),
+        ...(image_url ? { image_url } : {}),
+        vendor_id: vid || null,
+        vendor_name: vendor ? vendor.business_name || vendor.full_name : 'Campus Companion',
+        featured: fd.get('featured') === 'on',
+        in_stock: true,
+      });
+      if (result.error) throw result.error;
+      await loadProducts();
+      toast('success', 'Product added');
+      e.target.reset();
+    } catch (err) {
+      toast('error', 'Could not add product: ' + err.message);
+    } finally {
+      setLoading(btn, false);
     }
-    const vid = fd.get('vendor_id');
-    const vendor = STATE.profiles.find((p) => p.id === vid);
-    await sb.from('products').insert({
-      name: fd.get('name'),
-      category: fd.get('category'),
-      type: fd.get('type'),
-      price: Number(fd.get('price')),
-      description: fd.get('description'),
-      image_url: image_url || undefined,
-      vendor_id: vid || null,
-      vendor_name: vendor ? vendor.business_name || vendor.full_name : 'Campus Companion',
-      featured: fd.get('featured') === 'on',
-      in_stock: true,
-    });
-    await loadProducts();
-    toast('success', 'Product added');
-    e.target.reset();
-    setLoading(btn, false);
   }
   if (e.target.id === 'admin-settings-form') {
     e.preventDefault();
-    const fd = new FormData(e.target);
-    let logo_url = STATE.settings.logo_url;
-    const lf = fd.get('logo');
-    if (lf?.size) logo_url = await uploadFile('logos', 'site-logo', lf);
-    await sb.from('site_settings').update({
-      tagline: fd.get('tagline'),
-      announcement_banner: fd.get('announcement_banner'),
-      logo_url,
-      updated_at: new Date().toISOString(),
-    }).eq('id', 1);
-    await loadSettings();
-    toast('success', 'Settings saved');
+    const btn = e.target.querySelector('[type=submit]');
+    setLoading(btn, true);
+    try {
+      const fd = new FormData(e.target);
+      let logo_url = STATE.settings.logo_url;
+      const lf = fd.get('logo');
+      if (lf?.size) logo_url = await uploadFile('logos', 'site-logo', lf);
+      const result = await sb.from('site_settings').update({
+        tagline: fd.get('tagline'),
+        announcement_banner: fd.get('announcement_banner'),
+        logo_url,
+        updated_at: new Date().toISOString(),
+      }).eq('id', 1);
+      if (result.error) throw result.error;
+      await loadSettings();
+      toast('success', 'Settings saved');
+    } catch (err) {
+      toast('error', 'Could not save site settings: ' + err.message);
+    } finally {
+      setLoading(btn, false);
+    }
   }
 });
 
