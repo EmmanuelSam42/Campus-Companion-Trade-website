@@ -1561,6 +1561,34 @@ function renderWishlist() {
 function renderProfileForm() {
   const p = STATE.profile;
   if (!p) return;
+
+  const setText = (id, value, fallback = 'Not added') => {
+    const el = $(id);
+    if (el) el.textContent = value == null || String(value).trim() === '' ? fallback : String(value);
+  };
+
+  // Read-only profile summary uses the current signed-in user's profile data.
+  setText('profile-summary-name', p.full_name, 'Your profile');
+  setText('profile-summary-email', STATE.user?.email, 'Email unavailable');
+  setText('profile-summary-role', p.role ? p.role.charAt(0).toUpperCase() + p.role.slice(1) : 'User', 'User');
+  setText('profile-summary-status', p.status ? p.status.charAt(0).toUpperCase() + p.status.slice(1) : 'Active', 'Active');
+  setText('profile-summary-student-id', p.student_id);
+  setText('profile-summary-phone', p.phone);
+  setText('profile-summary-hall', p.hall);
+  setText('profile-summary-business', p.business_name);
+  setText('profile-summary-location', p.campus_location);
+  setText('profile-summary-social', p.social_handle);
+  setText('profile-summary-bio', p.business_bio, '');
+
+  const summaryAvatar = $('profile-summary-avatar');
+  if (summaryAvatar) {
+    summaryAvatar.src = p.avatar_url || '';
+    summaryAvatar.classList.toggle('hidden', !p.avatar_url);
+  }
+  $('.profile-vendor-summary').forEach((el) => el.classList.toggle('hidden', p.role !== 'vendor'));
+  const bioWrap = $('profile-summary-bio-wrap');
+  if (bioWrap) bioWrap.classList.toggle('hidden', p.role !== 'vendor' || !p.business_bio);
+
   $('profile-name').value = p.full_name || '';
   $('profile-phone').value = p.phone || '';
   $('profile-hall').value = p.hall || '';
@@ -2509,6 +2537,13 @@ document.addEventListener('click', (e) => {
     $('lightbox').classList.remove('hidden');
   }
   if (e.target.id === 'lightbox') $('lightbox').classList.add('hidden');
+});
+
+document.addEventListener('click', (e) => {
+  if (e.target.closest('[data-profile-edit]')) {
+    $('profile-form')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    $('profile-name')?.focus({ preventScroll: true });
+  }
 });
 
 $('profile-form')?.addEventListener('submit', async (e) => {
