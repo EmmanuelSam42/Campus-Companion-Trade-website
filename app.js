@@ -2581,76 +2581,95 @@ document.addEventListener('submit', async (e) => {
 }
   if (e.target.id === 'vendor-product-form') {
     e.preventDefault();
-    const fd = new FormData(e.target);
-    let image_url = '';
-    const file = fd.get('image');
-    if (file?.size) image_url = await uploadFile('products', `${Date.now()}-${file.name}`, file);
-    const row = {
-      name: fd.get('name'),
-      category: fd.get('category'),
-      type: fd.get('type'),
-      price: Number(fd.get('price')),
-      description: fd.get('description'),
-      availability_hours: fd.get('availability_hours'),
-      vendor_id: STATE.profile.id,
-      vendor_name: STATE.profile.business_name || STATE.profile.full_name,
-      image_url: image_url || undefined,
-    };
-    const pid = fd.get('id');
-    if (pid) await sb.from('products').update(row).eq('id', pid);
-    else await sb.from('products').insert(row);
-    await loadProducts();
-    toast('success', 'Product saved');
-    STATE.vendorPanel = 'products';
-    renderVendorDashboard();
+    const btn = e.target.querySelector('[type=submit]');
+    setLoading(btn, true);
+    try {
+      const fd = new FormData(e.target);
+      let image_url;
+      const file = fd.get('image');
+      if (file?.size) image_url = await uploadFile('products', `${Date.now()}-${file.name}`, file);
+      const row = {
+        name: fd.get('name'),
+        category: fd.get('category'),
+        type: fd.get('type'),
+        price: Number(fd.get('price')),
+        description: fd.get('description'),
+        availability_hours: fd.get('availability_hours'),
+        vendor_id: STATE.profile.id,
+        vendor_name: STATE.profile.business_name || STATE.profile.full_name,
+        ...(image_url ? { image_url } : {}),
+      };
+      const pid = fd.get('id');
+      const result = pid
+        ? await sb.from('products').update(row).eq('id', pid)
+        : await sb.from('products').insert(row);
+      if (result.error) throw result.error;
+      await loadProducts();
+      toast('success', 'Product saved');
+      STATE.vendorPanel = 'products';
+      renderVendorDashboard();
+    } catch (err) {
+      toast('error', 'Could not save product: ' + err.message);
+    } finally {
+      setLoading(btn, false);
+    }
   }
   if (e.target.id === 'admin-product-form') {
     e.preventDefault();
     const btn = e.target.querySelector('[type=submit]');
     setLoading(btn, true);
-    const fd = new FormData(e.target);
-    let image_url = '';
-    const file = fd.get('image');
-    if (file?.size) {
-      try {
-        image_url = await uploadFile('products', `admin-${Date.now()}-${file.name}`, file);
-      } catch (err) {
-        toast('warning', 'Image upload failed; continuing without image.');
-      }
+    try {
+      const fd = new FormData(e.target);
+      let image_url;
+      const file = fd.get('image');
+      if (file?.size) image_url = await uploadFile('products', `admin-${Date.now()}-${file.name}`, file);
+      const vid = fd.get('vendor_id');
+      const vendor = STATE.profiles.find((p) => p.id === vid);
+      const result = await sb.from('products').insert({
+        name: fd.get('name'),
+        category: fd.get('category'),
+        type: fd.get('type'),
+        price: Number(fd.get('price')),
+        description: fd.get('description'),
+        ...(image_url ? { image_url } : {}),
+        vendor_id: vid || null,
+        vendor_name: vendor ? vendor.business_name || vendor.full_name : 'Campus Companion',
+        featured: fd.get('featured') === 'on',
+        in_stock: true,
+      });
+      if (result.error) throw result.error;
+      await loadProducts();
+      toast('success', 'Product added');
+      e.target.reset();
+    } catch (err) {
+      toast('error', 'Could not add product: ' + err.message);
+    } finally {
+      setLoading(btn, false);
     }
-    const vid = fd.get('vendor_id');
-    const vendor = STATE.profiles.find((p) => p.id === vid);
-    await sb.from('products').insert({
-      name: fd.get('name'),
-      category: fd.get('category'),
-      type: fd.get('type'),
-      price: Number(fd.get('price')),
-      description: fd.get('description'),
-      image_url: image_url || undefined,
-      vendor_id: vid || null,
-      vendor_name: vendor ? vendor.business_name || vendor.full_name : 'Campus Companion',
-      featured: fd.get('featured') === 'on',
-      in_stock: true,
-    });
-    await loadProducts();
-    toast('success', 'Product added');
-    e.target.reset();
-    setLoading(btn, false);
   }
   if (e.target.id === 'admin-settings-form') {
     e.preventDefault();
-    const fd = new FormData(e.target);
-    let logo_url = STATE.settings.logo_url;
-    const lf = fd.get('logo');
-    if (lf?.size) logo_url = await uploadFile('logos', 'site-logo', lf);
-    await sb.from('site_settings').update({
-      tagline: fd.get('tagline'),
-      announcement_banner: fd.get('announcement_banner'),
-      logo_url,
-      updated_at: new Date().toISOString(),
-    }).eq('id', 1);
-    await loadSettings();
-    toast('success', 'Settings saved');
+    const btn = e.target.querySelector('[type=submit]');
+    setLoading(btn, true);
+    try {
+      const fd = new FormData(e.target);
+      let logo_url = STATE.settings.logo_url;
+      const lf = fd.get('logo');
+      if (lf?.size) logo_url = await uploadFile('logos', 'site-logo', lf);
+      const result = await sb.from('site_settings').update({
+        tagline: fd.get('tagline'),
+        announcement_banner: fd.get('announcement_banner'),
+        logo_url,
+        updated_at: new Date().toISOString(),
+      }).eq('id', 1);
+      if (result.error) throw result.error;
+      await loadSettings();
+      toast('success', 'Settings saved');
+    } catch (err) {
+      toast('error', 'Could not save site settings: ' + err.message);
+    } finally {
+      setLoading(btn, false);
+    }
   }
 });
 
