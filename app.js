@@ -941,6 +941,7 @@ async function handleRegister(e) {
     hall: $('reg-hall').value.trim(),
   };
 
+  let logoPending = false;
   if (role === 'vendor') {
     meta.business_name = $('reg-business-name').value.trim();
     meta.business_type = $('reg-business-type').value;
@@ -950,7 +951,7 @@ async function handleRegister(e) {
     if ($('reg-staff-id').value.trim()) meta.student_id = $('reg-staff-id').value.trim();
     // Registration precedes authentication, and vendor uploads are restricted until approval.
     // The selected logo is uploaded from Profile after the vendor is approved.
-    const logoPending = Boolean($('reg-logo').files[0]);
+    logoPending = Boolean($('reg-logo').files[0]);
   }
 
   const { error } = await sb.auth.signUp({
